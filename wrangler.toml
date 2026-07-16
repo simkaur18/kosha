@@ -1,0 +1,20 @@
+name = "kosha"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Each person's own deployment gets its own D1 database — created during
+# setup with `wrangler d1 create kosha-db`, then the database_id below gets
+# filled in automatically by the setup flow (or manually, see Setup Guide).
+[[d1_databases]]
+binding = "DB"
+database_name = "kosha-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Cron Trigger for the daily nudge + version check (well within the free
+# plan's 5-triggers-per-account allowance).
+[triggers]
+crons = ["0 15 * * *"]  # ~8:30pm IST daily; adjust per user timezone during setup
+
+[vars]
+TOOLKIT_VERSION = "0.1.0"

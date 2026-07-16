@@ -1,0 +1,3 @@
+# Copy this file to .dev.vars for local development (wrangler dev reads it
+# automatically). Never commit the real .dev.vars — it's already gitignored.
+BOT_TOKEN=your-telegram-bot-token-from-botfather

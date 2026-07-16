@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kosha — Dashboard Mockup (Dark)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0c0f0d;
+    --sidebar: #101312;
+    --card: #15201a;
+    --card-2: #121815;
+    --line: #223028;
+    --ink: #eef4f0;
+    --muted: #7f9086;
+    --accent: #baf23c;
+    --accent-dim: #2c3a26;
+    --danger: #ff8a65;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px; background: var(--sidebar); border-right: 1px solid var(--line);
+    padding: 18px 14px; display: flex; flex-direction: column; gap: 18px;
+  }
+  .logo { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
+  .logo .mark {
+    width: 30px; height: 30px; border-radius: 8px; background: var(--accent);
+    color: #10240a; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px;
+  }
+  .logo b { font-size: 15px; }
+  .search {
+    background: var(--card-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; color: var(--muted);
+  }
+  nav.navlist { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+  .nav-section { font-size: 10px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; margin: 10px 4px 2px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px;
+    font-size: 13px; color: var(--muted);
+  }
+  .nav-item.active { background: var(--accent); color: #10240a; font-weight: 700; }
+  .sidebar-foot {
+    margin-top: auto; font-size: 10px; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 12px;
+  }
+
+  /* Main */
+  .main { flex: 1; padding: 18px 20px; min-width: 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .crumb { font-size: 12px; color: var(--muted); }
+  .crumb b { color: var(--ink); }
+  .top-actions { display: flex; align-items: center; gap: 10px; }
+  select.month-select {
+    background: var(--card-2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 7px 10px; font-size: 12px;
+  }
+  .icon-chip {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--card-2);
+    border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+
+  .content-cols { display: grid; grid-template-columns: 1fr 260px; gap: 16px; }
+
+  .cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 15px;
+  }
+  .card .label { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .card .value { font-size: 21px; font-weight: 800; }
+  .card .delta { font-size: 11px; margin-top: 6px; color: var(--muted); }
+  .delta.up { color: var(--accent); }
+  .delta.down { color: var(--danger); }
+  .accounts-mini { display: flex; gap: 6px; margin-top: 8px; }
+  .bank-chip {
+    font-size: 10px; padding: 3px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent);
+  }
+
+  .panels-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .panel h2 { font-size: 13px; margin: 0 0 10px; font-weight: 700; }
+  .panel h2 .muted { color: var(--muted); font-weight: 400; }
+
+  .stack-mini { display: flex; flex-direction: column; gap: 12px; }
+  .mini-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .mini-card .t { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .account-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 12px; }
+  .account-left { display: flex; align-items: center; gap: 8px; }
+  .bank-badge {
+    width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800;
+  }
+  .bank-badge.hdfc { background: #2a4a34; color: #baf23c; }
+  .bank-badge.axis { background: #3a2a4a; color: #e0b0ff; }
+  .bank-badge.sbi { background: #2a3a4a; color: #8fd0ff; }
+
+  table.txn-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.txn-table th {
+    text-align: left; font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.4px; padding: 6px 8px; border-bottom: 1px solid var(--line);
+  }
+  table.txn-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  table.txn-table tr:last-child td { border-bottom: none; }
+  .src-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent); }
+  .unparsed-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #4a2f22; color: #ff9d6b; }
+  .amt.debit { font-weight: 700; }
+  .amt.credit { font-weight: 700; color: var(--accent); }
+
+  .cta-card {
+    background: linear-gradient(160deg, var(--accent), #7bbf1a);
+    color: #10240a; border-radius: var(--radius); padding: 16px;
+  }
+  .cta-card .t { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .cta-card .d { font-size: 11px; opacity: 0.85; margin-bottom: 10px; }
+  .cta-btn {
+    background: #10240a; color: var(--accent); border: none; border-radius: 8px;
+    padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+
+  .activity-item { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
+  .activity-time { color: var(--muted); font-size: 10px; }
+
+  .trust-line {
+    margin-top: 14px; font-size: 11px; color: var(--muted); text-align: center;
+  }
+  .trust-line b { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .content-cols { grid-template-columns: 1fr; }
+    .cards-row { grid-template-columns: repeat(2, 1fr); }
+    .panels-row { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="logo"><div class="mark">K</div><b>Kosha</b></div>
+    <div class="search">🔍 Search…</div>
+    <nav class="navlist">
+      <div class="nav-section">Dashboards</div>
+      <div class="nav-item active">📊 Overview</div>
+      <div class="nav-item">💳 Transactions</div>
+      <div class="nav-item">📈 Investments</div>
+      <div class="nav-item">🏦 Accounts</div>
+      <div class="nav-section">Settings</div>
+      <div class="nav-item">🔒 PIN &amp; Security</div>
+      <div class="nav-item">⚙️ Preferences</div>
+    </nav>
+    <div class="sidebar-foot">Self-hosted instance<br>Your data never leaves your database</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">Dashboards / <b>Overview</b></div>
+      <div class="top-actions">
+        <div class="icon-chip">🔒</div>
+        <div class="icon-chip">⟳</div>
+        <select class="month-select">
+          <option>July 2026</option>
+          <option>June 2026</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="content-cols">
+      <div>
+        <div class="cards-row">
+          <div class="card">
+            <div class="label">Total balance (all accounts)</div>
+            <div class="value">₹3,84,210</div>
+            <div class="accounts-mini">
+              <span class="bank-chip">HDFC ₹2,41,800</span>
+              <span class="bank-chip">Axis ₹1,42,410</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="label">Spent this month</div>
+            <div class="value">₹42,180</div>
+            <div class="delta down">↑ 8% vs June</div>
+          </div>
+          <div class="card">
+            <div class="label">Net worth</div>
+            <div class="value">₹18.4L</div>
+            <div class="delta up">↑ ₹32,100 since last CAS</div>
+          </div>
+          <div class="card">
+            <div class="label">Unparsed messages</div>
+            <div class="value">2</div>
+            <div class="delta">Needs a quick look</div>
+          </div>
+        </div>
+
+        <div class="panels-row">
+          <div class="panel">
+            <h2>Spending overview <span class="muted">· July 2026</span></h2>
+            <canvas id="categoryChart" height="190"></canvas>
+          </div>
+          <div class="stack-mini">
+            <div class="mini-card">
+              <div class="t">Linked accounts</div>
+              <div class="account-row">
+                <div class="account-left"><span class="bank-badge hdfc">H</span> HDFC •• 2291</div>
+                <b>₹2,41,800</b>
+              </div>
+              <div class="account-row">
+                <div class="account-left"><span class="bank-badge axis">A</span> Axis •• 7745</div>
+                <b>₹1,42,410</b>
+              </div>
+              <div class="account-row" style="opacity:.5;">
+                <div class="account-left"><span class="bank-badge sbi">S</span> + Add account</div>
+                <span>—</span>
+              </div>
+            </div>
+            <div class="mini-card">
+              <div class="t">This month's savings</div>
+              <canvas id="savingsSpark" height="70"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:14px;">
+          <h2>Last 6 months <span class="muted">· spending vs income</span></h2>
+          <canvas id="trendChart" height="80"></canvas>
+        </div>
+
+        <div class="panel">
+          <h2>Recent transactions</h2>
+          <table class="txn-table">
+            <tr><th>Date</th><th>Vendor</th><th>Account</th><th>Source</th><th style="text-align:right;">Amount</th></tr>
+            <tr>
+              <td>14 Jul</td><td>Swiggy</td><td>HDFC</td>
+              <td><span class="src-tag">Telegram · typed</span></td>
+              <td style="text-align:right;" class="amt debit">−₹480</td>
+            </tr>
+            <tr>
+              <td>13 Jul</td><td>Salary credit</td><td>HDFC</td>
+              <td><span class="src-tag">Telegram · pasted</span></td>
+              <td style="text-align:right;" class="amt credit">+₹95,000</td>
+            </tr>
+            <tr>
+              <td>13 Jul</td><td>Unrecognised — Axis****7745</td><td>Axis</td>
+              <td><span class="unparsed-tag">review</span></td>
+              <td style="text-align:right;">—</td>
+            </tr>
+            <tr>
+              <td>12 Jul</td><td>BigBasket</td><td>Axis</td>
+              <td><span class="src-tag">Telegram · pasted</span></td>
+              <td style="text-align:right;" class="amt debit">−₹1,240</td>
+            </tr>
+            <tr>
+              <td>11 Jul</td><td>Uber</td><td>HDFC</td>
+              <td><span class="src-tag">Telegram · typed</span></td>
+              <td style="text-align:right;" class="amt debit">−₹220</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="stack-mini">
+        <div class="cta-card">
+          <div class="t">New CAS should have landed</div>
+          <div class="d">Upload it to update your investments &amp; net worth</div>
+          <button class="cta-btn">Upload CAS PDF</button>
+        </div>
+
+        <div class="mini-card">
+          <div class="t">Investments snapshot</div>
+          <div class="account-row"><span>SIPs</span><b>₹9.8L</b></div>
+          <div class="account-row"><span>Stocks</span><b>₹5.2L</b></div>
+          <div class="account-row"><span>FDs</span><b>₹2.6L</b></div>
+          <div class="account-row"><span>RDs</span><b>₹0.8L</b></div>
+        </div>
+
+        <div class="mini-card">
+          <div class="t">Activity</div>
+          <div class="activity-item">
+            <span class="activity-dot"></span>
+            <div>Evening nudge sent — 1 cash spend confirmed<div class="activity-time">Today, 8:02 PM</div></div>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot"></span>
+            <div>Axis message flagged as unparsed<div class="activity-time">Today, 3:14 PM</div></div>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot"></span>
+            <div>CAS reminder sent<div class="activity-time">5 Jul, 9:00 AM</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="trust-line">Your data lives only in <b>your own</b> database — never shared, sold, or seen by anyone else.</div>
+  </main>
+</div>
+
+<script>
+  new Chart(document.getElementById("categoryChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Food", "Shopping", "Transport", "Groceries", "Subscriptions", "Other"],
+      datasets: [{
+        data: [8420, 6320, 3980, 6980, 1240, 3900],
+        backgroundColor: ["#baf23c", "#8fd15e", "#5fae6e", "#3f8a6a", "#2c6a5c", "#1c4a44"],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
+      cutout: "62%",
+    }
+  });
+
+  new Chart(document.getElementById("trendChart"), {
+    type: "bar",
+    data: {
+      labels: ["Feb", "Mar", "Apr", "May", "Jun", "Jul"],
+      datasets: [
+        { label: "Spent", data: [38200, 40100, 35600, 44200, 39000, 42180], backgroundColor: "#baf23c" },
+        { label: "Income", data: [92000, 92000, 95000, 95000, 95000, 95000], backgroundColor: "#2c3a26" },
+      ]
+    },
+    options: {
+      plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
+      scales: {
+        y: { ticks: { color: "#7f9086", callback: v => "₹" + (v/1000) + "k" }, grid: { color: "#223028" } },
+        x: { ticks: { color: "#7f9086" }, grid: { display: false } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById("savingsSpark"), {
+    type: "line",
+    data: {
+      labels: ["Feb","Mar","Apr","May","Jun","Jul"],
+      datasets: [{
+        data: [12400, 9200, 15800, 7600, 14000, 10820],
+        borderColor: "#baf23c", backgroundColor: "rgba(186,242,60,0.15)",
+        fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { x: { display: false }, y: { display: false } }
+    }
+  });
+</script>
+</body>
+</html>
