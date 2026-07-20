@@ -103,7 +103,9 @@
   }
   .bank-badge.hdfc { background: #2a4a34; color: #baf23c; }
   .bank-badge.axis { background: #3a2a4a; color: #e0b0ff; }
+  .bank-badge.icici { background: #4a3a2a; color: #ffb066; }
   .bank-badge.sbi { background: #2a3a4a; color: #8fd0ff; }
+  .bank-badge.other { background: #2a2a2a; color: #cfcfcf; }
 
   table.txn-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   table.txn-table th {
@@ -171,10 +173,7 @@
       <div class="top-actions">
         <div class="icon-chip">🔒</div>
         <div class="icon-chip">⟳</div>
-        <select class="month-select">
-          <option>July 2026</option>
-          <option>June 2026</option>
-        </select>
+        <select class="month-select" id="monthSelect"></select>
       </div>
     </div>
 
@@ -183,47 +182,37 @@
         <div class="cards-row">
           <div class="card">
             <div class="label">Total balance (all accounts)</div>
-            <div class="value">₹3,84,210</div>
-            <div class="accounts-mini">
-              <span class="bank-chip">HDFC ₹2,41,800</span>
-              <span class="bank-chip">Axis ₹1,42,410</span>
-            </div>
+            <div class="value" id="totalBalanceValue">—</div>
+            <div class="accounts-mini" id="accountsMiniChips"></div>
           </div>
           <div class="card">
             <div class="label">Spent this month</div>
-            <div class="value">₹42,180</div>
-            <div class="delta down">↑ 8% vs June</div>
+            <div class="value" id="spentThisMonthValue">—</div>
+            <div class="delta" id="spentDelta"></div>
           </div>
           <div class="card">
             <div class="label">Net worth</div>
-            <div class="value">₹18.4L</div>
-            <div class="delta up">↑ ₹32,100 since last CAS</div>
+            <div class="value">Coming soon</div>
+            <div class="delta">Investments tracking isn't built yet</div>
           </div>
           <div class="card">
             <div class="label">Unparsed messages</div>
-            <div class="value">2</div>
-            <div class="delta">Needs a quick look</div>
+            <div class="value" id="unparsedValue">—</div>
+            <div class="delta" id="unparsedDelta"></div>
           </div>
         </div>
 
         <div class="panels-row">
           <div class="panel">
-            <h2>Spending overview <span class="muted">· July 2026</span></h2>
+            <h2>Spending overview <span class="muted">· <span id="categoryMonthLabel"></span></span></h2>
             <canvas id="categoryChart" height="190"></canvas>
           </div>
           <div class="stack-mini">
             <div class="mini-card">
               <div class="t">Linked accounts</div>
-              <div class="account-row">
-                <div class="account-left"><span class="bank-badge hdfc">H</span> HDFC •• 2291</div>
-                <b>₹2,41,800</b>
-              </div>
-              <div class="account-row">
-                <div class="account-left"><span class="bank-badge axis">A</span> Axis •• 7745</div>
-                <b>₹1,42,410</b>
-              </div>
+              <div id="linkedAccountsList"></div>
               <div class="account-row" style="opacity:.5;">
-                <div class="account-left"><span class="bank-badge sbi">S</span> + Add account</div>
+                <div class="account-left"><span class="bank-badge other">+</span> Add account</div>
                 <span>—</span>
               </div>
             </div>
@@ -243,31 +232,7 @@
           <h2>Recent transactions</h2>
           <table class="txn-table">
             <tr><th>Date</th><th>Vendor</th><th>Account</th><th>Source</th><th style="text-align:right;">Amount</th></tr>
-            <tr>
-              <td>14 Jul</td><td>Swiggy</td><td>HDFC</td>
-              <td><span class="src-tag">Telegram · typed</span></td>
-              <td style="text-align:right;" class="amt debit">−₹480</td>
-            </tr>
-            <tr>
-              <td>13 Jul</td><td>Salary credit</td><td>HDFC</td>
-              <td><span class="src-tag">Telegram · pasted</span></td>
-              <td style="text-align:right;" class="amt credit">+₹95,000</td>
-            </tr>
-            <tr>
-              <td>13 Jul</td><td>Unrecognised — Axis****7745</td><td>Axis</td>
-              <td><span class="unparsed-tag">review</span></td>
-              <td style="text-align:right;">—</td>
-            </tr>
-            <tr>
-              <td>12 Jul</td><td>BigBasket</td><td>Axis</td>
-              <td><span class="src-tag">Telegram · pasted</span></td>
-              <td style="text-align:right;" class="amt debit">−₹1,240</td>
-            </tr>
-            <tr>
-              <td>11 Jul</td><td>Uber</td><td>HDFC</td>
-              <td><span class="src-tag">Telegram · typed</span></td>
-              <td style="text-align:right;" class="amt debit">−₹220</td>
-            </tr>
+            <tbody id="recentTxnBody"></tbody>
           </table>
         </div>
       </div>
@@ -310,55 +275,178 @@
 </div>
 
 <script>
-  new Chart(document.getElementById("categoryChart"), {
-    type: "doughnut",
-    data: {
-      labels: ["Food", "Shopping", "Transport", "Groceries", "Subscriptions", "Other"],
-      datasets: [{
-        data: [8420, 6320, 3980, 6980, 1240, 3900],
-        backgroundColor: ["#baf23c", "#8fd15e", "#5fae6e", "#3f8a6a", "#2c6a5c", "#1c4a44"],
-        borderWidth: 0,
-      }]
-    },
-    options: {
-      plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
-      cutout: "62%",
-    }
-  });
+  const CATEGORY_COLORS = ["#baf23c", "#8fd15e", "#5fae6e", "#3f8a6a", "#2c6a5c", "#1c4a44", "#164039", "#0f302b"];
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  new Chart(document.getElementById("trendChart"), {
-    type: "bar",
-    data: {
-      labels: ["Feb", "Mar", "Apr", "May", "Jun", "Jul"],
-      datasets: [
-        { label: "Spent", data: [38200, 40100, 35600, 44200, 39000, 42180], backgroundColor: "#baf23c" },
-        { label: "Income", data: [92000, 92000, 95000, 95000, 95000, 95000], backgroundColor: "#2c3a26" },
-      ]
-    },
-    options: {
-      plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
-      scales: {
-        y: { ticks: { color: "#7f9086", callback: v => "₹" + (v/1000) + "k" }, grid: { color: "#223028" } },
-        x: { ticks: { color: "#7f9086" }, grid: { display: false } }
+  function monthLabel(monthKey) {
+    const [y, m] = monthKey.split("-").map(Number);
+    return `${MONTH_NAMES[m - 1]} ${y}`;
+  }
+
+  function inr(n) {
+    return "₹" + Math.round(n).toLocaleString("en-IN");
+  }
+
+  function bankSlug(bankName) {
+    const known = ["hdfc", "axis", "icici", "sbi"];
+    const slug = (bankName || "").toLowerCase();
+    return known.includes(slug) ? slug : "other";
+  }
+
+  let categoryChart, trendChart, savingsChart;
+
+  function renderCards(data) {
+    document.getElementById("totalBalanceValue").textContent = inr(data.totalBalance);
+    document.getElementById("accountsMiniChips").innerHTML = data.accounts
+      .map((a) => `<span class="bank-chip">${a.bankName} ${inr(a.balance)}</span>`)
+      .join("");
+
+    document.getElementById("spentThisMonthValue").textContent = inr(data.spentThisMonth);
+    const deltaEl = document.getElementById("spentDelta");
+    if (data.spentLastMonth > 0) {
+      const pct = Math.round(((data.spentThisMonth - data.spentLastMonth) / data.spentLastMonth) * 100);
+      deltaEl.textContent = `${pct >= 0 ? "↑" : "↓"} ${Math.abs(pct)}% vs last month`;
+      deltaEl.className = "delta " + (pct >= 0 ? "down" : "up"); // spending up = shown as "down" (bad), matching the mockup's color convention
+    } else {
+      deltaEl.textContent = "No data for last month yet";
+      deltaEl.className = "delta";
+    }
+
+    document.getElementById("unparsedValue").textContent = String(data.unparsedCount);
+    document.getElementById("unparsedDelta").textContent =
+      data.unparsedCount > 0 ? "Needs a quick look" : "All caught up";
+  }
+
+  function renderLinkedAccounts(data) {
+    document.getElementById("linkedAccountsList").innerHTML = data.accounts
+      .map((a) => {
+        const slug = bankSlug(a.bankName);
+        const initial = (a.bankName || "?")[0].toUpperCase();
+        const idPart = a.maskedIdentifier ? ` •• ${a.maskedIdentifier}` : "";
+        return `<div class="account-row">
+          <div class="account-left"><span class="bank-badge ${slug}">${initial}</span> ${a.bankName}${idPart}</div>
+          <b>${inr(a.balance)}</b>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function renderRecentTransactions(data) {
+    document.getElementById("recentTxnBody").innerHTML = data.recentTransactions
+      .map((t) => {
+        const dateStr = new Date(t.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+        const account = t.bankName ?? "—";
+        if (t.status === "unparsed") {
+          return `<tr>
+            <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
+            <td><span class="unparsed-tag">review</span></td>
+            <td style="text-align:right;">—</td>
+          </tr>`;
+        }
+        const sign = t.type === "debit" ? "−" : "+";
+        const cls = t.type === "debit" ? "debit" : "credit";
+        return `<tr>
+          <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
+          <td><span class="src-tag">Telegram · ${t.source}</span></td>
+          <td style="text-align:right;" class="amt ${cls}">${sign}${inr(t.amount)}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function renderCategoryChart(data) {
+    const ctx = document.getElementById("categoryChart");
+    const labels = data.categoryBreakdown.map((c) => c.category);
+    const values = data.categoryBreakdown.map((c) => c.amount);
+    if (categoryChart) categoryChart.destroy();
+    categoryChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: labels.length ? labels : ["No spending yet"],
+        datasets: [{
+          data: values.length ? values : [1],
+          backgroundColor: CATEGORY_COLORS,
+          borderWidth: 0,
+        }]
+      },
+      options: {
+        plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
+        cutout: "62%",
       }
-    }
-  });
+    });
+  }
 
-  new Chart(document.getElementById("savingsSpark"), {
-    type: "line",
-    data: {
-      labels: ["Feb","Mar","Apr","May","Jun","Jul"],
-      datasets: [{
-        data: [12400, 9200, 15800, 7600, 14000, 10820],
-        borderColor: "#baf23c", backgroundColor: "rgba(186,242,60,0.15)",
-        fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: { x: { display: false }, y: { display: false } }
+  function renderTrendCharts(data) {
+    const labels = data.monthlyTrend.map((m) => monthLabel(m.month).split(" ")[0]);
+    const spent = data.monthlyTrend.map((m) => m.spent);
+    const income = data.monthlyTrend.map((m) => m.income);
+    const savings = data.monthlyTrend.map((m) => m.income - m.spent);
+
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(document.getElementById("trendChart"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Spent", data: spent, backgroundColor: "#baf23c" },
+          { label: "Income", data: income, backgroundColor: "#2c3a26" },
+        ]
+      },
+      options: {
+        plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          y: { ticks: { color: "#7f9086", callback: v => "₹" + (v/1000) + "k" }, grid: { color: "#223028" } },
+          x: { ticks: { color: "#7f9086" }, grid: { display: false } }
+        }
+      }
+    });
+
+    if (savingsChart) savingsChart.destroy();
+    savingsChart = new Chart(document.getElementById("savingsSpark"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: savings,
+          borderColor: "#baf23c", backgroundColor: "rgba(186,242,60,0.15)",
+          fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { display: false } }
+      }
+    });
+  }
+
+  function populateMonthSelect(data) {
+    const select = document.getElementById("monthSelect");
+    select.innerHTML = data.availableMonths
+      .slice()
+      .reverse()
+      .map((m) => `<option value="${m}" ${m === data.month ? "selected" : ""}>${monthLabel(m)}</option>`)
+      .join("");
+  }
+
+  async function loadDashboard(month) {
+    const url = month ? `/api/dashboard/data?month=${encodeURIComponent(month)}` : "/api/dashboard/data";
+    const res = await fetch(url);
+    if (!res.ok) {
+      document.querySelector(".main").innerHTML = "<p style='color:#7f9086;padding:20px;'>Couldn't load your data — try refreshing.</p>";
+      return;
     }
-  });
+    const data = await res.json();
+    document.getElementById("categoryMonthLabel").textContent = monthLabel(data.month);
+    populateMonthSelect(data);
+    renderCards(data);
+    renderLinkedAccounts(data);
+    renderRecentTransactions(data);
+    renderCategoryChart(data);
+    renderTrendCharts(data);
+  }
+
+  document.getElementById("monthSelect").addEventListener("change", (e) => loadDashboard(e.target.value));
+  loadDashboard();
 </script>
 </body>
 </html>

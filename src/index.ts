@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { webhookCallback } from "grammy";
-import { drizzle } from "drizzle-orm/d1";
+import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { createBot, Env } from "./bot";
-import { settings } from "./db/schema";
+import { settings, transactions, accounts } from "./db/schema";
 import { getOrCreateSettings } from "./settings";
 import { verifyPin, verifySessionToken, createSessionToken, isLockedOut, MAX_FAILED_ATTEMPTS, LOCKOUT_MS } from "./auth";
 import { renderLoginPage, renderMessagePage } from "./dashboard-pages";
+import { buildDashboardPayload } from "./dashboard-data";
 
 const app = new Hono<{ Bindings: Env }>();
 const SESSION_COOKIE = "kosha_session";
@@ -18,6 +19,17 @@ function readCookie(header: string | null, name: string): string | undefined {
     if (key === name) return rest.join("=");
   }
   return undefined;
+}
+
+// Shared by every dashboard-facing route (the page itself, and its data
+// API) so there's exactly one place that decides "is this request logged
+// in" — returns the settings row on success, null otherwise.
+async function getAuthedSettings(c: { req: { header(name: string): string | undefined }; env: Env }, db: DrizzleD1Database) {
+  const current = await getOrCreateSettings(db);
+  if (!current.pinHash || !current.sessionSecret) return null;
+  const cookie = readCookie(c.req.header("Cookie") ?? null, SESSION_COOKIE);
+  const authed = await verifySessionToken(cookie, current.sessionSecret);
+  return authed ? current : null;
 }
 
 app.get("/", (c) => c.text(`Kosha toolkit — running (v${c.env.TOOLKIT_VERSION ?? "dev"})`));
@@ -33,9 +45,7 @@ app.get("/dashboard", async (c) => {
     return c.html(renderMessagePage("Not set up yet", "Text your bot a 6-digit number first to set a dashboard PIN."));
   }
 
-  const cookie = readCookie(c.req.header("Cookie") ?? null, SESSION_COOKIE);
-  const authed = current.sessionSecret ? await verifySessionToken(cookie, current.sessionSecret) : false;
-
+  const authed = await getAuthedSettings(c, db);
   if (!authed) {
     return c.html(renderLoginPage());
   }
@@ -43,6 +53,20 @@ app.get("/dashboard", async (c) => {
   const assetUrl = new URL(c.req.url);
   assetUrl.pathname = "/index.html";
   return c.env.ASSETS.fetch(new Request(assetUrl, c.req.raw));
+});
+
+// JSON data feed for the dashboard's charts/tables — same auth as the page
+// itself. ?month=YYYY-MM selects which month to summarize; omit for the
+// most recent month with any activity.
+app.get("/api/dashboard/data", async (c) => {
+  const db = drizzle(c.env.DB);
+  const authed = await getAuthedSettings(c, db);
+  if (!authed) return c.json({ error: "unauthorized" }, 401);
+
+  const [txns, accts] = await Promise.all([db.select().from(transactions), db.select().from(accounts)]);
+  const month = c.req.query("month");
+  const payload = buildDashboardPayload(txns, accts, new Date().toISOString(), month);
+  return c.json(payload);
 });
 
 app.post("/dashboard/login", async (c) => {
