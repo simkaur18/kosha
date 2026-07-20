@@ -46,6 +46,10 @@ export const investments = sqliteTable("investments", {
 export const settings = sqliteTable("settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   pinHash: text("pin_hash"),
+  pinSalt: text("pin_salt"),
+  sessionSecret: text("session_secret"), // signs dashboard session cookies
+  failedAttempts: integer("failed_attempts").default(0), // dashboard login lockout
+  lockedUntil: text("locked_until"), // ISO timestamp, null when not locked
   notificationCadence: text("notification_cadence").default("daily"), // "daily" | "weekly" | "off"
   language: text("language").default("en"), // "en" | "hi"
   toolkitVersion: text("toolkit_version"),

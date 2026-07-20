@@ -1,14 +1,18 @@
 import { Bot } from "grammy";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
-import { accounts, transactions, categories } from "./db/schema";
+import { accounts, transactions, categories, settings } from "./db/schema";
 import { parseMessage } from "./parsing/engine";
 import { categorize } from "./categorize";
+import { generateSalt, hashPin } from "./auth";
+import { getOrCreateSettings } from "./settings";
 
 export interface Env {
   DB: D1Database;
   BOT_TOKEN: string;
   TOOLKIT_VERSION: string;
+  DASHBOARD_URL: string;
+  ASSETS: Fetcher;
 }
 
 // Slugifies a bank name from an account hint like "HDFC ••1234" -> "hdfc".
@@ -38,14 +42,30 @@ export function createBot(env: Env) {
     );
   });
 
+  bot.command(["forgotpin", "resetpin"], async (ctx) => {
+    await ctx.reply(
+      "No problem — just reply here with a new 6-digit PIN and it'll replace your old one right away. " +
+        "Only you can do this, since only you have this chat."
+    );
+  });
+
   // A 6-digit reply is treated as a PIN set/reset, anything else goes
-  // through the expense-parsing pipeline. (PIN hashing + dashboard link
-  // generation land in a later build phase — this is the skeleton.)
+  // through the expense-parsing pipeline.
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();
 
     if (/^\d{6}$/.test(text)) {
-      await ctx.reply("Got it — your dashboard's locked with that PIN. (Dashboard link setup lands in a later step.)");
+      const current = await getOrCreateSettings(db);
+      const salt = generateSalt();
+      const pinHash = await hashPin(text, salt);
+
+      await db
+        .update(settings)
+        .set({ pinHash, pinSalt: salt, failedAttempts: 0, lockedUntil: null })
+        .where(eq(settings.id, 1));
+
+      const dashboardUrl = env.DASHBOARD_URL ? `${env.DASHBOARD_URL}/dashboard` : "your Worker's /dashboard URL";
+      await ctx.reply(`Done — your dashboard PIN is set. Open ${dashboardUrl} any time and enter it there.`);
       return;
     }
 
