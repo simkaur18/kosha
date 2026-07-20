@@ -70,8 +70,15 @@ export function createBot(env: Env) {
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();
 
+    // Captures the chat to send nudges to. Cheap to check every message —
+    // it's a single-tenant bot, so this only ever actually writes once.
+    const current = await getOrCreateSettings(db);
+    const chatId = String(ctx.chat.id);
+    if (current.chatId !== chatId) {
+      await db.update(settings).set({ chatId }).where(eq(settings.id, 1));
+    }
+
     if (/^\d{6}$/.test(text)) {
-      const current = await getOrCreateSettings(db);
       const salt = generateSalt();
       const pinHash = await hashPin(text, salt);
 

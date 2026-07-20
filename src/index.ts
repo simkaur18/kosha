@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { webhookCallback } from "grammy";
+import { webhookCallback, Bot } from "grammy";
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { createBot, Env } from "./bot";
@@ -7,7 +7,18 @@ import { settings, transactions, accounts } from "./db/schema";
 import { getOrCreateSettings } from "./settings";
 import { verifyPin, verifySessionToken, createSessionToken, isLockedOut, MAX_FAILED_ATTEMPTS, LOCKOUT_MS } from "./auth";
 import { renderLoginPage, renderMessagePage } from "./dashboard-pages";
-import { buildDashboardPayload } from "./dashboard-data";
+import { buildDashboardPayload, spentInMonth, categoryBreakdown } from "./dashboard-data";
+import {
+  istDateKey,
+  istMonthKey,
+  isFirstOfIstMonth,
+  previousMonthKey,
+  monthLabelFor,
+  spentOnDate,
+  unparsedCountOnDate,
+  buildDailyNudgeText,
+  buildMonthlyNudgeText,
+} from "./nudges";
 
 const app = new Hono<{ Bindings: Env }>();
 const SESSION_COOKIE = "kosha_session";
@@ -125,4 +136,35 @@ app.post("/setup/webhook", async (c) => {
   return c.json(data);
 });
 
-export default app;
+// Fires once a day (see wrangler.toml's [triggers]). Sends an evening
+// check-in nudge always, plus a "month closed out" summary on the 1st.
+// Silently does nothing until someone has actually texted the bot at least
+// once (no chat to send to yet) or if they've turned notifications off.
+async function runNudges(env: Env): Promise<void> {
+  const db = drizzle(env.DB);
+  const current = await getOrCreateSettings(db);
+  if (!current.chatId || current.notificationCadence === "off") return;
+
+  const txns = await db.select().from(transactions);
+  const bot = new Bot(env.BOT_TOKEN);
+  const nowIso = new Date().toISOString();
+
+  const todayKey = istDateKey(nowIso);
+  const dailyText = buildDailyNudgeText(spentOnDate(txns, todayKey), unparsedCountOnDate(txns, todayKey));
+  await bot.api.sendMessage(current.chatId, dailyText);
+
+  if (isFirstOfIstMonth(nowIso)) {
+    const lastMonth = previousMonthKey(istMonthKey(nowIso));
+    const spentLastMonth = spentInMonth(txns, lastMonth);
+    const [topCategory] = categoryBreakdown(txns, lastMonth);
+    const monthlyText = buildMonthlyNudgeText(monthLabelFor(lastMonth), spentLastMonth, topCategory ?? null);
+    if (monthlyText) await bot.api.sendMessage(current.chatId, monthlyText);
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runNudges(env));
+  },
+};

@@ -53,4 +53,5 @@ export const settings = sqliteTable("settings", {
   notificationCadence: text("notification_cadence").default("daily"), // "daily" | "weekly" | "off"
   language: text("language").default("en"), // "en" | "hi"
   toolkitVersion: text("toolkit_version"),
+  chatId: text("chat_id"), // Telegram chat to send nudges to — captured from the first message in, in bot.ts
 });
