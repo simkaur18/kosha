@@ -9,7 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "kosha-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "36686de0-33c0-4dc7-9f24-446630223b04"
 
 # Cron Trigger for the daily nudge + version check (well within the free
 # plan's 5-triggers-per-account allowance).
