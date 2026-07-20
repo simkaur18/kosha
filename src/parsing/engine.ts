@@ -1,4 +1,4 @@
-import { ParseResult, ParseTemplate } from "./types";
+import type { ParseResult, ParseTemplate } from "./types";
 import { redactSensitive } from "./redact";
 import { hdfcTemplate } from "./templates/hdfc";
 import { axisTemplate } from "./templates/axis";

@@ -1,4 +1,4 @@
-import { ParseTemplate, ParsedTransaction } from "../types";
+import type { ParseTemplate, ParsedTransaction } from "../types";
 
 // Example shape (starting template — refine against real, redacted Axis
 // messages once we have them):

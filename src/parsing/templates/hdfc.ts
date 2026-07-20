@@ -1,4 +1,4 @@
-import { ParseTemplate, ParsedTransaction } from "../types";
+import type { ParseTemplate, ParsedTransaction } from "../types";
 
 // Example shape (real HDFC wording varies — this is a starting template to
 // refine against real, redacted messages once we have them; see the

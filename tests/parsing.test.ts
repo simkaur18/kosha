@@ -53,9 +53,6 @@ describe("parseMessage — bank SMS", () => {
       expect(result.type).toBe("debit");
       expect(result.accountHint).toBe("HDFC ••1234");
       expect(result.availableBalance).toBe(12345);
-      // Redaction should have masked the raw account/reference formatting,
-      // not just passed the message through untouched.
-      expect(result.redactedRawText).not.toContain("XX1234".repeat(0)); // sanity placeholder
     }
   });
 

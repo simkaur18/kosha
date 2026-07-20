@@ -1,4 +1,4 @@
-import { ParseTemplate, ParsedTransaction } from "../types";
+import type { ParseTemplate, ParsedTransaction } from "../types";
 
 // Handles messages someone types directly, e.g.:
 //   "500 spent on swiggy"
