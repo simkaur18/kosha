@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { accounts, transactions, categories, settings } from "./db/schema";
@@ -6,6 +6,7 @@ import { parseMessage } from "./parsing/engine";
 import { categorize } from "./categorize";
 import { generateSalt, hashPin } from "./auth";
 import { getOrCreateSettings } from "./settings";
+import { buildExportCsv } from "./export";
 
 export interface Env {
   DB: D1Database;
@@ -40,6 +41,21 @@ export function createBot(env: Env) {
         "• /forgotpin, /resetpin — dashboard access\n" +
         "• /investments — set up CAS tracking"
     );
+  });
+
+  bot.command("export", async (ctx) => {
+    const txns = await db.select().from(transactions);
+    if (txns.length === 0) {
+      await ctx.reply("Nothing to export yet — log an expense first, or paste a bank message.");
+      return;
+    }
+
+    const accts = await db.select().from(accounts);
+    const csv = buildExportCsv(txns, accts);
+    const filename = `kosha-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    await ctx.replyWithDocument(new InputFile(new TextEncoder().encode(csv), filename), {
+      caption: `Your full history — ${txns.length} entries. Opens in Excel, Sheets, or Numbers.`,
+    });
   });
 
   bot.command(["forgotpin", "resetpin"], async (ctx) => {
