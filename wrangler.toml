@@ -27,4 +27,4 @@ crons = ["0 15 * * *"]  # ~8:30pm IST daily; adjust per user timezone during set
 TOOLKIT_VERSION = "0.1.0"
 # Fill this in after your first deploy prints your *.workers.dev URL — the
 # bot uses it to tell you where to enter your PIN. Leave blank until then.
-DASHBOARD_URL = ""
+DASHBOARD_URL = "https://kosha.pro-sim-kaur.workers.dev"
