@@ -11,6 +11,13 @@ binding = "DB"
 database_name = "kosha-db"
 database_id = "36686de0-33c0-4dc7-9f24-446630223b04"
 
+# Serves dashboard/index.html — the Worker's fetch handler gates access to
+# this with the PIN/session check in src/index.ts before ever calling
+# env.ASSETS.fetch(), so nothing here is reachable unauthenticated.
+[assets]
+directory = "./dashboard"
+binding = "ASSETS"
+
 # Cron Trigger for the daily nudge + version check (well within the free
 # plan's 5-triggers-per-account allowance).
 [triggers]
@@ -18,3 +25,6 @@ crons = ["0 15 * * *"]  # ~8:30pm IST daily; adjust per user timezone during set
 
 [vars]
 TOOLKIT_VERSION = "0.1.0"
+# Fill this in after your first deploy prints your *.workers.dev URL — the
+# bot uses it to tell you where to enter your PIN. Leave blank until then.
+DASHBOARD_URL = ""
