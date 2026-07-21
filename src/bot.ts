@@ -65,6 +65,96 @@ export function createBot(env: Env) {
     );
   });
 
+  // Lists whatever couldn't be auto-parsed, tagged with a short id (the last
+  // 6 characters of the transaction's uuid — plenty unique at this scale)
+  // so /fix and /discard have something short enough to type back.
+  bot.command("review", async (ctx) => {
+    const unparsed = await db.select().from(transactions).where(eq(transactions.status, "unparsed"));
+    if (unparsed.length === 0) {
+      await ctx.reply("Nothing to review — everything you've sent has parsed cleanly.");
+      return;
+    }
+
+    const recent = unparsed.slice(-10);
+    const lines = recent.map((t) => {
+      const shortId = t.id.slice(-6);
+      const date = new Date(t.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+      const snippet = (t.redactedRawText ?? "").slice(0, 80);
+      return `#${shortId} (${date}): ${snippet}`;
+    });
+    const exampleId = recent[recent.length - 1].id.slice(-6);
+
+    await ctx.reply(
+      `${unparsed.length} unparsed message${unparsed.length === 1 ? "" : "s"}${unparsed.length > recent.length ? ` (showing the ${recent.length} most recent)` : ""}:\n\n` +
+        `${lines.join("\n")}\n\n` +
+        `To fix one: /fix <id> <amount> <debit|credit> [vendor]\n` +
+        `e.g. /fix ${exampleId} 250 debit swiggy\n\n` +
+        `Wasn't actually an expense? /discard <id> to drop it for good.`
+    );
+  });
+
+  bot.command("fix", async (ctx) => {
+    const payload = (ctx.match as string | undefined)?.trim() ?? "";
+    const parts = payload.split(/\s+/).filter(Boolean);
+    const [shortId, amountStr, directionRaw, ...vendorParts] = parts;
+
+    if (!shortId || !amountStr || !directionRaw) {
+      await ctx.reply("Usage: /fix <id> <amount> <debit|credit> [vendor]\nGrab the id from /review.");
+      return;
+    }
+
+    const direction = directionRaw.toLowerCase();
+    if (direction !== "debit" && direction !== "credit") {
+      await ctx.reply(`"${directionRaw}" has to be either "debit" or "credit" — e.g. /fix ${shortId} 250 debit swiggy`);
+      return;
+    }
+
+    const amount = parseFloat(amountStr.replace(/,/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await ctx.reply(`"${amountStr}" doesn't look like a valid amount — e.g. /fix ${shortId} 250 debit swiggy`);
+      return;
+    }
+
+    const unparsed = await db.select().from(transactions).where(eq(transactions.status, "unparsed"));
+    const match = unparsed.find((t) => t.id.endsWith(shortId));
+    if (!match) {
+      await ctx.reply(`Couldn't find an unparsed entry ending in "${shortId}" — check /review for current ids.`);
+      return;
+    }
+
+    const vendor = vendorParts.join(" ").trim() || null;
+    const rules = await db.select().from(categories);
+    const category = vendor ? categorize(vendor, rules) : null;
+
+    await db
+      .update(transactions)
+      .set({ amount, type: direction, vendor, category, status: "parsed" })
+      .where(eq(transactions.id, match.id));
+
+    const amountDisplay = `₹${amount.toLocaleString("en-IN")}`;
+    const vendorStr = vendor ? ` to ${vendor}` : "";
+    const categoryStr = category ? `, tagged as ${category}` : "";
+    await ctx.reply(`Fixed — ${amountDisplay}${vendorStr}${categoryStr}.`);
+  });
+
+  bot.command("discard", async (ctx) => {
+    const shortId = (ctx.match as string | undefined)?.trim();
+    if (!shortId) {
+      await ctx.reply("Usage: /discard <id> — grab the id from /review.");
+      return;
+    }
+
+    const unparsed = await db.select().from(transactions).where(eq(transactions.status, "unparsed"));
+    const match = unparsed.find((t) => t.id.endsWith(shortId));
+    if (!match) {
+      await ctx.reply(`Couldn't find an unparsed entry ending in "${shortId}" — check /review for current ids.`);
+      return;
+    }
+
+    await db.delete(transactions).where(eq(transactions.id, match.id));
+    await ctx.reply("Discarded — that one's gone for good.");
+  });
+
   // A 6-digit reply is treated as a PIN set/reset, anything else goes
   // through the expense-parsing pipeline.
   bot.on("message:text", async (ctx) => {
