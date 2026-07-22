@@ -1,13 +1,14 @@
 import { Bot, InputFile } from "grammy";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
-import { accounts, transactions, categories, settings } from "./db/schema";
+import { accounts, transactions, categories, settings, investments } from "./db/schema";
 import { parseMessage } from "./parsing/engine";
 import { categorize } from "./categorize";
 import { generateSalt, hashPin } from "./auth";
 import { getOrCreateSettings } from "./settings";
 import { buildExportCsv } from "./export";
 import { findRefundCandidate, buildRefundPromptText, parseYesNo } from "./refunds";
+import { parseInvestmentCommand, formatInvestmentsList } from "./investments";
 
 export interface Env {
   DB: D1Database;
@@ -40,7 +41,8 @@ export function createBot(env: Env) {
         "• /review — fix anything marked unparsed\n" +
         "• /export — download your full history\n" +
         "• /forgotpin, /resetpin — dashboard access\n" +
-        "• /investments — set up CAS tracking"
+        "• /investments — see SIPs/stocks/FDs/RDs, or add one manually " +
+        "(CAS PDF upload for SIPs/stocks is on the dashboard)"
     );
   });
 
@@ -154,6 +156,83 @@ export function createBot(env: Env) {
 
     await db.delete(transactions).where(eq(transactions.id, match.id));
     await ctx.reply("Discarded — that one's gone for good.");
+  });
+
+  // Manual SIP/stock/FD/RD entry — the lighter-weight sibling of the
+  // dashboard's CAS PDF import, and the only way FDs/RDs ever get tracked
+  // (a CAS doesn't contain either). Bare /investments lists what's tracked;
+  // add/update/remove manage individual holdings. "add" and "update" behave
+  // identically (upsert by type+name) — the reply always says which one
+  // actually happened based on whether a match existed, so typing the
+  // "wrong" one of the two still does the right thing.
+  bot.command("investments", async (ctx) => {
+    const payload = (ctx.match as string | undefined)?.trim() ?? "";
+
+    if (!payload) {
+      const rows = await db.select().from(investments);
+      await ctx.reply(formatInvestmentsList(rows, new Date().toISOString()));
+      return;
+    }
+
+    const action = parseInvestmentCommand(payload);
+    if ("error" in action) {
+      await ctx.reply(action.error);
+      return;
+    }
+
+    if (action.kind === "remove") {
+      const rows = await db.select().from(investments).where(eq(investments.type, action.type));
+      const match = rows.find((r) => r.name.toLowerCase() === action.name.toLowerCase());
+      if (!match) {
+        await ctx.reply(`Couldn't find a ${action.type} called "${action.name}" — check /investments for the exact name.`);
+        return;
+      }
+      await db.delete(investments).where(eq(investments.id, match.id));
+      await ctx.reply(`Removed "${match.name}".`);
+      return;
+    }
+
+    const existingOfType = await db.select().from(investments).where(eq(investments.type, action.type));
+    const match = existingOfType.find((r) => r.name.toLowerCase() === action.name.toLowerCase());
+    const now = new Date().toISOString();
+
+    if (action.type === "fd") {
+      const values = {
+        type: "fd" as const,
+        name: action.name,
+        investedAmount: action.principal,
+        currentValue: null,
+        principal: action.principal,
+        interestRate: action.interestRate,
+        startDate: now, // resets the interest clock — see the comment above
+        maturityDate: action.maturityDate,
+        lastUpdated: now,
+      };
+      if (match) {
+        await db.update(investments).set(values).where(eq(investments.id, match.id));
+      } else {
+        await db.insert(investments).values({ id: crypto.randomUUID(), ...values });
+      }
+      await ctx.reply(
+        `${match ? "Updated" : "Added"} "${action.name}" — ₹${action.principal.toLocaleString("en-IN")} at ${action.interestRate}%, ` +
+          `matures ${action.maturityDate}.${match ? " Growth is recalculated from today." : ""}`
+      );
+      return;
+    }
+
+    const values = {
+      type: action.type,
+      name: action.name,
+      investedAmount: action.investedAmount,
+      currentValue: action.currentValue,
+      lastUpdated: now,
+    };
+    if (match) {
+      await db.update(investments).set(values).where(eq(investments.id, match.id));
+    } else {
+      await db.insert(investments).values({ id: crypto.randomUUID(), ...values });
+    }
+    await ctx.reply(`${match ? "Updated" : "Added"} "${action.name}" — current value ₹${action.currentValue.toLocaleString("en-IN")}.`);
   });
 
   // A 6-digit reply is treated as a PIN set/reset, anything else goes

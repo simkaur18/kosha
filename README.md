@@ -37,11 +37,22 @@ Architecture, Design Discovery, Bot Conversation Design, Setup Guide).
   recent debit (same amount, same/similar vendor, within 7 days) prompts a
   yes/no in Telegram to net it against the original expense instead of
   counting it as new income
+- CAS PDF upload, parsed entirely client-side with pdf.js (dashboard's
+  "Upload CAS PDF" button) — populates SIP/mutual-fund and stock holdings,
+  with a preview-and-confirm step before anything saves. The text-parsing
+  regexes are a best-effort first pass, not yet verified against a real CAS
+  (see the caveat in `dashboard/index.html`)
+- `/investments` in Telegram — lists tracked SIPs/stocks/FDs/RDs, and lets
+  you add/update/remove any of them manually (`src/investments.ts`). The
+  only way FDs/RDs get tracked at all, since a CAS doesn't contain either;
+  FD current value is computed live via simple interest from the amount,
+  rate, and maturity date you give it (`src/dashboard-data.ts`'s
+  `fdCurrentValue`) rather than needing to be re-entered
+- Real net worth + investments snapshot on the dashboard (bank balances +
+  investments' current value), replacing the old placeholder numbers
 
 ## Not built yet (see the PRD for the full P0/P1/P2 list)
 
-- CAS upload + browser-side pdf.js parsing
-- `/investments` command (manual SIP/stock/FD/RD entry)
 - Master toolkit version-check flow
 
 ## Local development

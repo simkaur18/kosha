@@ -33,14 +33,25 @@ export const categories = sqliteTable("categories", {
   matchPattern: text("match_pattern").notNull(), // simple substring/regex the vendor is checked against
 });
 
-// Combined net worth view: SIPs/mutual funds, stocks, FDs, RDs.
+// Combined net worth view: SIPs/mutual funds, stocks, FDs, RDs. SIP/stock
+// rows are populated from a CAS import or manual /investments entry, and
+// just store currentValue directly. FD rows are formula-backed instead —
+// principal/interestRate/startDate/maturityDate get set by /investments,
+// and the *displayed* current value is computed from those (simple
+// interest) rather than trusting a stale currentValue column, so it stays
+// accurate without the person re-entering it every month. See
+// src/dashboard-data.ts's fdCurrentValue.
 export const investments = sqliteTable("investments", {
   id: text("id").primaryKey(),
-  type: text("type").notNull(), // "sip" | "stock" | "fd" | "rd"
+  type: text("type").notNull().$type<"sip" | "stock" | "fd" | "rd">(),
   name: text("name").notNull(),
   investedAmount: real("invested_amount"),
   currentValue: real("current_value"),
   lastUpdated: text("last_updated"),
+  principal: real("principal"), // FD only
+  interestRate: real("interest_rate"), // FD only, annual %
+  startDate: text("start_date"), // FD only — set automatically, not user-entered
+  maturityDate: text("maturity_date"), // FD only
 });
 
 // Per-instance configuration — one row, effectively a key-value singleton.

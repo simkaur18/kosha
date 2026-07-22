@@ -35,6 +35,12 @@ export interface InvestmentRow {
   investedAmount: number | null;
   currentValue: number | null;
   lastUpdated: string | null;
+  // FD-only formula inputs (see fdCurrentValue below) — null/absent for
+  // sip/stock/rd rows, which just use currentValue directly.
+  principal?: number | null;
+  interestRate?: number | null;
+  startDate?: string | null;
+  maturityDate?: string | null;
 }
 
 function monthKeyOf(dateIso: string): string {
@@ -70,13 +76,41 @@ export function totalBalance(accounts: AccountRow[]): number {
   return accounts.reduce((sum, a) => sum + (a.currentBalance ?? 0), 0);
 }
 
-// Current value only, by type — SIPs and stocks are populated from a CAS
-// import (see the dashboard's "Upload CAS PDF" flow); FDs/RDs are manual
-// entry (not built yet) and will simply be absent until then.
-export function investmentTotalsByType(investments: InvestmentRow[]): Record<InvestmentType, number> {
+// FD value via simple interest from its principal, deliberately not
+// compound: FDs quote an annual rate that's already the bank's own
+// compounding math baked in, and this is meant as a transparent personal
+// estimate, not a bank-exact reconciliation. Growth freezes at whatever the
+// value was on the maturity date rather than continuing to accrue past it.
+// Falls back to a stored currentValue if the formula inputs aren't set
+// (e.g. an older row, or a type this doesn't apply to).
+export function fdCurrentValue(inv: InvestmentRow, nowIso: string): number {
+  if (inv.principal == null || inv.interestRate == null || !inv.startDate) {
+    return inv.currentValue ?? 0;
+  }
+  const startMs = new Date(inv.startDate).getTime();
+  const capMs = inv.maturityDate ? new Date(inv.maturityDate).getTime() : Infinity;
+  const nowMs = Math.min(new Date(nowIso).getTime(), capMs);
+  const yearsElapsed = Math.max(0, (nowMs - startMs) / (365.25 * 24 * 60 * 60 * 1000));
+  return inv.principal * (1 + (inv.interestRate / 100) * yearsElapsed);
+}
+
+// The value to actually use for an investment row "right now" — formula-
+// backed for FDs (see fdCurrentValue), a plain stored number for everything
+// else (sip/stock from a CAS import or manual entry, rd manual entry).
+export function effectiveCurrentValue(inv: InvestmentRow, nowIso: string): number {
+  return inv.type === "fd" ? fdCurrentValue(inv, nowIso) : inv.currentValue ?? 0;
+}
+
+// Current value only, by type — SIPs/stocks come from a CAS import or
+// manual /investments entry; FDs are computed live (see fdCurrentValue); RDs
+// are manual /investments entry.
+export function investmentTotalsByType(
+  investments: InvestmentRow[],
+  nowIso: string = new Date().toISOString()
+): Record<InvestmentType, number> {
   const totals: Record<InvestmentType, number> = { sip: 0, stock: 0, fd: 0, rd: 0 };
   for (const inv of investments) {
-    totals[inv.type] += inv.currentValue ?? 0;
+    totals[inv.type] += effectiveCurrentValue(inv, nowIso);
   }
   return totals;
 }
@@ -91,8 +125,12 @@ export function investmentTypesPresent(investments: InvestmentRow[]): Record<Inv
 
 // Bank balances + investments' current value. Invested amount (cost basis)
 // deliberately isn't part of this — net worth is what things are worth now.
-export function netWorth(accounts: AccountRow[], investments: InvestmentRow[]): number {
-  return totalBalance(accounts) + investments.reduce((sum, i) => sum + (i.currentValue ?? 0), 0);
+export function netWorth(
+  accounts: AccountRow[],
+  investments: InvestmentRow[],
+  nowIso: string = new Date().toISOString()
+): number {
+  return totalBalance(accounts) + investments.reduce((sum, i) => sum + effectiveCurrentValue(i, nowIso), 0);
 }
 
 // Most recent CAS import date across all investments, for a "as of ..."
@@ -223,8 +261,8 @@ export function buildDashboardPayload(
     topMerchants: topMerchants(transactions, month),
     monthlyTrend: monthlyTrend(transactions, month),
     recentTransactions: recentTransactions(transactions, accounts),
-    netWorth: netWorth(accounts, investmentRows),
-    investmentTotals: investmentTotalsByType(investmentRows),
+    netWorth: netWorth(accounts, investmentRows, nowIso),
+    investmentTotals: investmentTotalsByType(investmentRows, nowIso),
     investmentTypesPresent: investmentTypesPresent(investmentRows),
     investmentsAsOf: investmentsAsOf(investmentRows),
   };
