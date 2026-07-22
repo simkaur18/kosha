@@ -7,6 +7,7 @@ import { categorize } from "./categorize";
 import { generateSalt, hashPin } from "./auth";
 import { getOrCreateSettings } from "./settings";
 import { buildExportCsv } from "./export";
+import { findRefundCandidate, buildRefundPromptText, parseYesNo } from "./refunds";
 
 export interface Env {
   DB: D1Database;
@@ -168,6 +169,47 @@ export function createBot(env: Env) {
       await db.update(settings).set({ chatId }).where(eq(settings.id, 1));
     }
 
+    // A refund question is waiting on a yes/no reply — handle that before
+    // anything else so "yes"/"no" never gets fed into the expense parser.
+    // Anything else clears the question rather than blocking the chat: the
+    // credit already landed as ordinary income when it came in, so ignoring
+    // the question just leaves it that way (the PRD's "by default" case).
+    if (current.pendingRefundCreditId && current.pendingRefundDebitId) {
+      const pendingCreditId = current.pendingRefundCreditId;
+      const pendingDebitId = current.pendingRefundDebitId;
+      const answer = parseYesNo(text);
+      if (answer !== null) {
+        if (answer === "yes") {
+          const [credit] = await db.select().from(transactions).where(eq(transactions.id, pendingCreditId));
+          const [debit] = await db.select().from(transactions).where(eq(transactions.id, pendingDebitId));
+          if (credit && debit) {
+            await db
+              .update(transactions)
+              .set({ amount: Math.max(0, debit.amount - credit.amount) })
+              .where(eq(transactions.id, debit.id));
+            await db
+              .update(transactions)
+              .set({ status: "netted", refundOf: debit.id })
+              .where(eq(transactions.id, credit.id));
+          }
+        }
+        await db
+          .update(settings)
+          .set({ pendingRefundCreditId: null, pendingRefundDebitId: null })
+          .where(eq(settings.id, 1));
+        await ctx.reply(
+          answer === "yes"
+            ? "Done — netted against that expense, won't count as separate income."
+            : "Got it — keeping it as income."
+        );
+        return;
+      }
+      await db
+        .update(settings)
+        .set({ pendingRefundCreditId: null, pendingRefundDebitId: null })
+        .where(eq(settings.id, 1));
+    }
+
     if (/^\d{6}$/.test(text)) {
       const salt = generateSalt();
       const pinHash = await hashPin(text, salt);
@@ -229,9 +271,11 @@ export function createBot(env: Env) {
     const rules = await db.select().from(categories);
     const category = categorize(result.vendor, rules);
 
+    const now = new Date().toISOString();
+    const newTxnId = crypto.randomUUID();
     await db.insert(transactions).values({
-      id: crypto.randomUUID(),
-      date: new Date().toISOString(),
+      id: newTxnId,
+      date: now,
       amount: result.amount,
       type: result.type,
       vendor: result.vendor,
@@ -241,6 +285,24 @@ export function createBot(env: Env) {
       status: "parsed",
       accountId,
     });
+
+    // Refund/reversal detection (PRD, P1) — only credits can be refunds of an
+    // earlier expense, so debits skip straight to the normal reply below.
+    if (result.type === "credit") {
+      const parsedTxns = await db.select().from(transactions).where(eq(transactions.status, "parsed"));
+      const candidate = findRefundCandidate(
+        parsedTxns.filter((t) => t.id !== newTxnId),
+        { amount: result.amount, vendor: result.vendor, date: now }
+      );
+      if (candidate) {
+        await db
+          .update(settings)
+          .set({ pendingRefundCreditId: newTxnId, pendingRefundDebitId: candidate.id })
+          .where(eq(settings.id, 1));
+        await ctx.reply(buildRefundPromptText(candidate, now));
+        return;
+      }
+    }
 
     const amountStr = `₹${result.amount.toLocaleString("en-IN")}`;
     const vendorStr = result.vendor ? ` to ${result.vendor}` : "";

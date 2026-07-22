@@ -30,6 +30,8 @@ export async function getOrCreateSettings(db: DrizzleD1Database) {
     language: "en",
     toolkitVersion: null as string | null,
     chatId: null as string | null,
+    pendingRefundCreditId: null as string | null,
+    pendingRefundDebitId: null as string | null,
   };
   await db.insert(settings).values(created);
   return created;

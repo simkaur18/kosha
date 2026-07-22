@@ -8,7 +8,7 @@ export interface ExportTxnRow {
   vendor: string | null;
   category: string | null;
   source: string;
-  status: "parsed" | "unparsed";
+  status: "parsed" | "unparsed" | "netted";
   accountId: string | null;
   redactedRawText: string | null;
 }
@@ -54,7 +54,7 @@ export function buildExportCsv(transactions: ExportTxnRow[], accounts: ExportAcc
       return [
         t.date,
         t.type,
-        t.status === "parsed" ? String(t.amount) : "",
+        t.status === "unparsed" ? "" : String(t.amount), // netted rows keep their amount for the audit trail — only truly-unparsed rows have no real amount
         t.vendor ?? "",
         t.category ?? "",
         accountLabel,

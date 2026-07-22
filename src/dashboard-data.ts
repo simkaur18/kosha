@@ -11,7 +11,11 @@ export interface TxnRow {
   vendor: string | null;
   category: string | null;
   source: string;
-  status: "parsed" | "unparsed";
+  // "netted" = a credit confirmed as a refund against another transaction
+  // (see src/refunds.ts) — excluded from spend/income totals below same as
+  // "unparsed", since it isn't really new income; the expense it refunds had
+  // its own amount reduced instead.
+  status: "parsed" | "unparsed" | "netted";
   accountId: string | null;
 }
 

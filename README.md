@@ -10,30 +10,38 @@ Architecture, Design Discovery, Bot Conversation Design, Setup Guide).
 
 ## Status
 
-**Phase 1 skeleton** — not yet deployed anywhere. What exists so far:
+**Deployed and in daily use.** What exists so far:
 
 - Telegram webhook + message handling (`src/bot.ts`, `src/index.ts`)
-- Parsing engine for typed entries and two starter bank templates, HDFC and
-  Axis (`src/parsing/`) — these are *starting* templates based on typical
-  formats, not yet verified against real (redacted) bank messages. That's
-  the next real risk to close before this goes further.
+- Parsing engine for typed entries and starter bank templates — HDFC (account
+  + card), ICICI (account + card), and Axis (`src/parsing/`) — verified
+  against real (redacted) bank messages as they come in; anything a template
+  misses lands in `/review`/the dashboard's "Needs review" panel instead of
+  being lost.
 - D1 schema for accounts, transactions, categories, investments, settings
-  (`src/db/schema.ts`, `migrations/0000_init.sql`)
+  (`src/db/schema.ts`, `migrations/`)
 - Starter Smart Rules category set
 - A one-time `/setup/webhook` route that registers the Telegram webhook from
   Cloudflare's own infrastructure (works around this dev environment not
   having direct network access to Telegram's API)
-- The approved dashboard mockup, as static HTML with sample data
-  (`dashboard/index.html`) — not yet wired to real data
+- PIN hashing + dashboard auth (`src/auth.ts`), with brute-force lockout
+- Dashboard wired to real D1 data — balances, spend, category breakdown, top
+  merchants, monthly trend, recent transactions (`dashboard/index.html`,
+  `src/dashboard-data.ts`)
+- A "Needs review" panel on the dashboard, and `/review`, `/fix`, `/discard`
+  in Telegram — two ways to resolve anything marked unparsed
+- Daily evening check-in + monthly close-out nudges via the cron trigger
+  (`src/nudges.ts`)
+- `/export` (full history as CSV), `/forgotpin`, `/resetpin`
+- Refund/reversal detection (`src/refunds.ts`) — a credit that matches a
+  recent debit (same amount, same/similar vendor, within 7 days) prompts a
+  yes/no in Telegram to net it against the original expense instead of
+  counting it as new income
 
 ## Not built yet (see the PRD for the full P0/P1/P2 list)
 
-- PIN hashing + dashboard auth
-- Dashboard wired to real D1 data (currently sample data only)
 - CAS upload + browser-side pdf.js parsing
-- Daily/monthly nudges (cron trigger is configured in `wrangler.toml`, handler not written)
-- `/review`, `/export`, `/forgotpin`, `/resetpin`, `/investments` commands (stubs only so far)
-- Refund/reversal detection
+- `/investments` command (manual SIP/stock/FD/RD entry)
 - Master toolkit version-check flow
 
 ## Local development

@@ -116,6 +116,7 @@
   table.txn-table tr:last-child td { border-bottom: none; }
   .src-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent); }
   .unparsed-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #4a2f22; color: #ff9d6b; }
+  .netted-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #223028; color: #7f9086; }
   .amt.debit { font-weight: 700; }
   .amt.credit { font-weight: 700; color: var(--accent); }
 
@@ -346,6 +347,13 @@
             <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
             <td><span class="unparsed-tag">review</span></td>
             <td style="text-align:right;">—</td>
+          </tr>`;
+        }
+        if (t.status === "netted") {
+          return `<tr style="opacity:.7;">
+            <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
+            <td><span class="netted-tag">refund · netted</span></td>
+            <td style="text-align:right;">${inr(t.amount)}</td>
           </tr>`;
         }
         const sign = t.type === "debit" ? "−" : "+";

@@ -21,8 +21,9 @@ export const transactions = sqliteTable("transactions", {
   category: text("category"),
   redactedRawText: text("redacted_raw_text"), // original message with sensitive bits stripped
   source: text("source").notNull(), // "typed" | "pasted" | "auto"
-  status: text("status").notNull(), // "parsed" | "unparsed"
+  status: text("status").notNull().$type<"parsed" | "unparsed" | "netted">(), // "netted" = a refund confirmed against another transaction — see refund_of
   accountId: text("account_id").references(() => accounts.id),
+  refundOf: text("refund_of").references((): any => transactions.id), // set on the credit once confirmed as a refund; points at the debit it was netted against
 });
 
 // Teachable merchant-to-category pattern rules ("Smart Rules").
@@ -54,4 +55,7 @@ export const settings = sqliteTable("settings", {
   language: text("language").default("en"), // "en" | "hi"
   toolkitVersion: text("toolkit_version"),
   chatId: text("chat_id"), // Telegram chat to send nudges to — captured from the first message in, in bot.ts
+  // The one in-flight "is this a refund?" yes/no question, if any — see src/refunds.ts.
+  pendingRefundCreditId: text("pending_refund_credit_id"),
+  pendingRefundDebitId: text("pending_refund_debit_id"),
 });
