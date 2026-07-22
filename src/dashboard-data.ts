@@ -26,6 +26,17 @@ export interface AccountRow {
   currentBalance: number | null;
 }
 
+export type InvestmentType = "sip" | "stock" | "fd" | "rd";
+
+export interface InvestmentRow {
+  id: string;
+  type: InvestmentType;
+  name: string;
+  investedAmount: number | null;
+  currentValue: number | null;
+  lastUpdated: string | null;
+}
+
 function monthKeyOf(dateIso: string): string {
   return dateIso.slice(0, 7); // "2026-07-14T..." -> "2026-07"
 }
@@ -57,6 +68,39 @@ export function getAvailableMonths(transactions: TxnRow[], nowIso: string): stri
 
 export function totalBalance(accounts: AccountRow[]): number {
   return accounts.reduce((sum, a) => sum + (a.currentBalance ?? 0), 0);
+}
+
+// Current value only, by type — SIPs and stocks are populated from a CAS
+// import (see the dashboard's "Upload CAS PDF" flow); FDs/RDs are manual
+// entry (not built yet) and will simply be absent until then.
+export function investmentTotalsByType(investments: InvestmentRow[]): Record<InvestmentType, number> {
+  const totals: Record<InvestmentType, number> = { sip: 0, stock: 0, fd: 0, rd: 0 };
+  for (const inv of investments) {
+    totals[inv.type] += inv.currentValue ?? 0;
+  }
+  return totals;
+}
+
+// Lets the dashboard show "—" for a type with no data yet instead of a
+// misleading ₹0, which would otherwise look like "confirmed zero holdings".
+export function investmentTypesPresent(investments: InvestmentRow[]): Record<InvestmentType, boolean> {
+  const present: Record<InvestmentType, boolean> = { sip: false, stock: false, fd: false, rd: false };
+  for (const inv of investments) present[inv.type] = true;
+  return present;
+}
+
+// Bank balances + investments' current value. Invested amount (cost basis)
+// deliberately isn't part of this — net worth is what things are worth now.
+export function netWorth(accounts: AccountRow[], investments: InvestmentRow[]): number {
+  return totalBalance(accounts) + investments.reduce((sum, i) => sum + (i.currentValue ?? 0), 0);
+}
+
+// Most recent CAS import date across all investments, for a "as of ..."
+// label — null when nothing's been imported yet.
+export function investmentsAsOf(investments: InvestmentRow[]): string | null {
+  const dates = investments.map((i) => i.lastUpdated).filter((d): d is string => Boolean(d));
+  if (dates.length === 0) return null;
+  return dates.reduce((latest, d) => (d > latest ? d : latest));
 }
 
 export function spentInMonth(transactions: TxnRow[], month: string): number {
@@ -144,13 +188,18 @@ export interface DashboardPayload {
   topMerchants: { vendor: string; amount: number }[];
   monthlyTrend: { month: string; spent: number; income: number }[];
   recentTransactions: ReturnType<typeof recentTransactions>;
+  netWorth: number;
+  investmentTotals: Record<InvestmentType, number>;
+  investmentTypesPresent: Record<InvestmentType, boolean>;
+  investmentsAsOf: string | null;
 }
 
 export function buildDashboardPayload(
   transactions: TxnRow[],
   accounts: AccountRow[],
   nowIso: string,
-  requestedMonth?: string
+  requestedMonth?: string,
+  investmentRows: InvestmentRow[] = []
 ): DashboardPayload {
   const availableMonths = getAvailableMonths(transactions, nowIso);
   const month = requestedMonth && availableMonths.includes(requestedMonth)
@@ -174,5 +223,9 @@ export function buildDashboardPayload(
     topMerchants: topMerchants(transactions, month),
     monthlyTrend: monthlyTrend(transactions, month),
     recentTransactions: recentTransactions(transactions, accounts),
+    netWorth: netWorth(accounts, investmentRows),
+    investmentTotals: investmentTotalsByType(investmentRows),
+    investmentTypesPresent: investmentTypesPresent(investmentRows),
+    investmentsAsOf: investmentsAsOf(investmentRows),
   };
 }

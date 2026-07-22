@@ -10,8 +10,13 @@ import {
   monthlyTrend,
   recentTransactions,
   buildDashboardPayload,
+  investmentTotalsByType,
+  investmentTypesPresent,
+  netWorth,
+  investmentsAsOf,
   type TxnRow,
   type AccountRow,
+  type InvestmentRow,
 } from "../src/dashboard-data";
 
 const NOW = "2026-07-20T12:00:00.000Z";
@@ -175,5 +180,72 @@ describe("buildDashboardPayload", () => {
   it("computes total balance from accounts regardless of selected month", () => {
     const payload = buildDashboardPayload([], accounts, NOW);
     expect(payload.totalBalance).toBe(384210);
+  });
+
+  it("defaults investment fields sensibly when none are passed", () => {
+    const payload = buildDashboardPayload([], accounts, NOW);
+    expect(payload.netWorth).toBe(384210); // just the bank balance
+    expect(payload.investmentTotals).toEqual({ sip: 0, stock: 0, fd: 0, rd: 0 });
+    expect(payload.investmentTypesPresent).toEqual({ sip: false, stock: false, fd: false, rd: false });
+    expect(payload.investmentsAsOf).toBe(null);
+  });
+
+  it("folds real investments into net worth and totals", () => {
+    const investments: InvestmentRow[] = [
+      { id: "i1", type: "sip", name: "XYZ Bluechip Fund", investedAmount: 15000, currentValue: 19387, lastUpdated: "2026-07-10T00:00:00.000Z" },
+      { id: "i2", type: "stock", name: "Reliance", investedAmount: null, currentValue: 34567, lastUpdated: "2026-07-12T00:00:00.000Z" },
+    ];
+    const payload = buildDashboardPayload([], accounts, NOW, undefined, investments);
+    expect(payload.netWorth).toBe(384210 + 19387 + 34567);
+    expect(payload.investmentTotals).toEqual({ sip: 19387, stock: 34567, fd: 0, rd: 0 });
+    expect(payload.investmentTypesPresent).toEqual({ sip: true, stock: true, fd: false, rd: false });
+    expect(payload.investmentsAsOf).toBe("2026-07-12T00:00:00.000Z");
+  });
+});
+
+describe("investmentTotalsByType / investmentTypesPresent", () => {
+  const investments: InvestmentRow[] = [
+    { id: "i1", type: "sip", name: "Fund A", investedAmount: 1000, currentValue: 1200, lastUpdated: null },
+    { id: "i2", type: "sip", name: "Fund B", investedAmount: 2000, currentValue: 1800, lastUpdated: null },
+  ];
+
+  it("sums current value per type, ignoring types with no rows", () => {
+    expect(investmentTotalsByType(investments)).toEqual({ sip: 3000, stock: 0, fd: 0, rd: 0 });
+  });
+
+  it("only marks a type present if at least one row exists", () => {
+    expect(investmentTypesPresent(investments)).toEqual({ sip: true, stock: false, fd: false, rd: false });
+  });
+
+  it("treats a null currentValue as zero rather than throwing", () => {
+    const rows: InvestmentRow[] = [{ id: "i1", type: "fd", name: "HDFC FD", investedAmount: 50000, currentValue: null, lastUpdated: null }];
+    expect(investmentTotalsByType(rows)).toEqual({ sip: 0, stock: 0, fd: 0, rd: 0 });
+  });
+});
+
+describe("netWorth", () => {
+  it("is just the bank balance when there are no investments", () => {
+    expect(netWorth(accounts, [])).toBe(384210);
+  });
+
+  it("adds investments' current value, not invested amount", () => {
+    const investments: InvestmentRow[] = [
+      { id: "i1", type: "sip", name: "Fund A", investedAmount: 1000, currentValue: 1200, lastUpdated: null },
+    ];
+    expect(netWorth(accounts, investments)).toBe(384210 + 1200);
+  });
+});
+
+describe("investmentsAsOf", () => {
+  it("returns null when there are no investments", () => {
+    expect(investmentsAsOf([])).toBe(null);
+  });
+
+  it("returns the most recent lastUpdated date across all investments", () => {
+    const investments: InvestmentRow[] = [
+      { id: "i1", type: "sip", name: "Fund A", investedAmount: 1000, currentValue: 1200, lastUpdated: "2026-06-01T00:00:00.000Z" },
+      { id: "i2", type: "stock", name: "Reliance", investedAmount: null, currentValue: 5000, lastUpdated: "2026-07-10T00:00:00.000Z" },
+    ];
+    expect(investmentsAsOf(investments)).toBe("2026-07-10T00:00:00.000Z");
   });
 });

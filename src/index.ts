@@ -3,7 +3,7 @@ import { webhookCallback, Bot } from "grammy";
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and } from "drizzle-orm";
 import { createBot, Env } from "./bot";
-import { settings, transactions, accounts, categories } from "./db/schema";
+import { settings, transactions, accounts, categories, investments } from "./db/schema";
 import { getOrCreateSettings } from "./settings";
 import { categorize } from "./categorize";
 import { verifyPin, verifySessionToken, createSessionToken, isLockedOut, MAX_FAILED_ATTEMPTS, LOCKOUT_MS } from "./auth";
@@ -75,9 +75,13 @@ app.get("/api/dashboard/data", async (c) => {
   const authed = await getAuthedSettings(c, db);
   if (!authed) return c.json({ error: "unauthorized" }, 401);
 
-  const [txns, accts] = await Promise.all([db.select().from(transactions), db.select().from(accounts)]);
+  const [txns, accts, invs] = await Promise.all([
+    db.select().from(transactions),
+    db.select().from(accounts),
+    db.select().from(investments),
+  ]);
   const month = c.req.query("month");
-  const payload = buildDashboardPayload(txns, accts, new Date().toISOString(), month);
+  const payload = buildDashboardPayload(txns, accts, new Date().toISOString(), month, invs);
   return c.json(payload);
 });
 
@@ -142,6 +146,52 @@ app.post("/api/dashboard/unparsed/:id/reject", async (c) => {
 
   await db.delete(transactions).where(eq(transactions.id, id));
   return c.json({ ok: true });
+});
+
+// Saves the holdings extracted client-side from a CAS PDF (see the
+// dashboard's "Upload CAS PDF" flow — src/refunds.ts's sibling for
+// investments, so to speak). The PDF itself, and its password, never leave
+// the browser; only these already-parsed numbers get POSTed here.
+// Upserts by type+name (case-insensitive) so re-uploading next month's CAS
+// updates existing holdings instead of duplicating them.
+app.post("/api/investments/import", async (c) => {
+  const db = drizzle(c.env.DB);
+  const authed = await getAuthedSettings(c, db);
+  if (!authed) return c.json({ error: "unauthorized" }, 401);
+
+  const body = await c.req.json().catch(() => null);
+  const holdings = Array.isArray(body?.holdings) ? body.holdings : null;
+  if (!holdings || holdings.length === 0) return c.json({ error: "No holdings to save" }, 400);
+
+  const existing = await db.select().from(investments);
+  const now = new Date().toISOString();
+  let saved = 0;
+
+  for (const h of holdings) {
+    const type = h?.type;
+    const name = typeof h?.name === "string" ? h.name.trim() : "";
+    const investedAmount = h?.investedAmount != null ? Number(h.investedAmount) : null;
+    const currentValue = h?.currentValue != null ? Number(h.currentValue) : null;
+
+    // CAS only ever gives us mutual fund (sip) and demat stock holdings —
+    // FDs/RDs are manual entry, a separate not-yet-built feature.
+    if ((type !== "sip" && type !== "stock") || !name) continue;
+    if (investedAmount != null && !Number.isFinite(investedAmount)) continue;
+    if (currentValue != null && !Number.isFinite(currentValue)) continue;
+
+    const match = existing.find((e) => e.type === type && e.name.toLowerCase() === name.toLowerCase());
+    if (match) {
+      await db
+        .update(investments)
+        .set({ investedAmount, currentValue, lastUpdated: now })
+        .where(eq(investments.id, match.id));
+    } else {
+      await db.insert(investments).values({ id: crypto.randomUUID(), type, name, investedAmount, currentValue, lastUpdated: now });
+    }
+    saved++;
+  }
+
+  return c.json({ ok: true, saved });
 });
 
 app.post("/dashboard/login", async (c) => {
