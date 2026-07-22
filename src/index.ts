@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { webhookCallback, Bot } from "grammy";
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { createBot, Env } from "./bot";
-import { settings, transactions, accounts } from "./db/schema";
+import { settings, transactions, accounts, categories } from "./db/schema";
 import { getOrCreateSettings } from "./settings";
+import { categorize } from "./categorize";
 import { verifyPin, verifySessionToken, createSessionToken, isLockedOut, MAX_FAILED_ATTEMPTS, LOCKOUT_MS } from "./auth";
 import { renderLoginPage, renderMessagePage } from "./dashboard-pages";
 import { buildDashboardPayload, spentInMonth, categoryBreakdown } from "./dashboard-data";
@@ -78,6 +79,69 @@ app.get("/api/dashboard/data", async (c) => {
   const month = c.req.query("month");
   const payload = buildDashboardPayload(txns, accts, new Date().toISOString(), month);
   return c.json(payload);
+});
+
+// Everything currently marked unparsed — the dashboard equivalent of the
+// bot's /review command. Only the fields the review UI actually needs go
+// out; amount/type/category are meaningless on an unparsed row.
+app.get("/api/dashboard/unparsed", async (c) => {
+  const db = drizzle(c.env.DB);
+  const authed = await getAuthedSettings(c, db);
+  if (!authed) return c.json({ error: "unauthorized" }, 401);
+
+  const rows = await db.select().from(transactions).where(eq(transactions.status, "unparsed"));
+  const entries = rows
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .map((t) => ({ id: t.id, date: t.date, redactedRawText: t.redactedRawText }));
+  return c.json({ entries });
+});
+
+// Approves one unparsed entry with the amount/type/vendor the person just
+// filled in on the dashboard — same effect as the bot's /fix command.
+app.post("/api/dashboard/unparsed/:id/approve", async (c) => {
+  const db = drizzle(c.env.DB);
+  const authed = await getAuthedSettings(c, db);
+  if (!authed) return c.json({ error: "unauthorized" }, 401);
+
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const amount = Number(body?.amount);
+  const type = body?.type;
+  const vendor = typeof body?.vendor === "string" && body.vendor.trim() ? body.vendor.trim() : null;
+
+  if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: "Enter a valid amount" }, 400);
+  if (type !== "debit" && type !== "credit") return c.json({ error: "Type must be debit or credit" }, 400);
+
+  const [existing] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, id), eq(transactions.status, "unparsed")));
+  if (!existing) return c.json({ error: "Not found (already handled elsewhere?)" }, 404);
+
+  const rules = await db.select().from(categories);
+  const category = categorize(vendor, rules);
+
+  await db.update(transactions).set({ amount, type, vendor, category, status: "parsed" }).where(eq(transactions.id, id));
+  return c.json({ ok: true });
+});
+
+// Drops an unparsed entry that wasn't actually a transaction — same effect
+// as the bot's /discard command.
+app.post("/api/dashboard/unparsed/:id/reject", async (c) => {
+  const db = drizzle(c.env.DB);
+  const authed = await getAuthedSettings(c, db);
+  if (!authed) return c.json({ error: "unauthorized" }, 401);
+
+  const id = c.req.param("id");
+  const [existing] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, id), eq(transactions.status, "unparsed")));
+  if (!existing) return c.json({ error: "Not found (already handled elsewhere?)" }, 404);
+
+  await db.delete(transactions).where(eq(transactions.id, id));
+  return c.json({ ok: true });
 });
 
 app.post("/dashboard/login", async (c) => {
