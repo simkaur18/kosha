@@ -712,7 +712,7 @@
     const file = fileInput.files && fileInput.files[0];
     if (!file) {
       errorEl.textContent = "Choose a CAS PDF file first.";
-      errorEl.style.display = "";
+      errorEl.style.display = "block";
       return;
     }
 
@@ -726,7 +726,7 @@
       const holdings = parseCasText(text);
       if (holdings.length === 0) {
         errorEl.textContent = "Couldn't find any holdings in this PDF — the format may not be supported yet.";
-        errorEl.style.display = "";
+        errorEl.style.display = "block";
         parseBtn.disabled = false;
         parseBtn.textContent = "Parse";
         return;
@@ -740,7 +740,7 @@
       errorEl.textContent = /password/i.test(msg)
         ? "Wrong password — try again (usually your PAN, all caps, no spaces)."
         : "Couldn't read this PDF: " + msg;
-      errorEl.style.display = "";
+      errorEl.style.display = "block";
       parseBtn.disabled = false;
       parseBtn.textContent = "Parse";
     }
@@ -777,7 +777,7 @@
 
     if (casHoldings.length === 0) {
       saveError.textContent = "Nothing left to save — remove fewer, or cancel and try a different file.";
-      saveError.style.display = "";
+      saveError.style.display = "block";
       return;
     }
 
@@ -799,7 +799,7 @@
       loadDashboard(document.getElementById("monthSelect").value);
     } catch (err) {
       saveError.textContent = String((err && err.message) || err);
-      saveError.style.display = "";
+      saveError.style.display = "block";
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.textContent = "Looks right — save";
