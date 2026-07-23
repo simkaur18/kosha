@@ -346,6 +346,7 @@
         <input type="password" id="casPasswordInput" placeholder="e.g. ABCDE1234F" autocomplete="off">
       </div>
       <div class="modal-error" id="casError"></div>
+      <div id="casDiagLine" style="display:none; font-size:11px; color:var(--muted); margin-top:6px;"></div>
       <div class="modal-field" id="casDebugTextWrap" style="display:none;">
         <label>Auto-redacted sample (short snippets around structural keywords only; all numbers blanked out — nothing here is sent anywhere automatically, click to select all and copy if you want to share it)</label>
         <textarea id="casDebugTextArea" readonly rows="8" style="width:100%; font-family:monospace; font-size:11px;" onclick="this.select()"></textarea>
@@ -689,45 +690,61 @@
       .join("\n\n--- snippet ---\n\n");
   }
 
+  // Returns { text, totalPages, pagesOk, pagesFailed } instead of a bare
+  // string. Each page is extracted independently — a real multi-page CAS
+  // (10+ pages isn't unusual) means a failure on any single page shouldn't
+  // be able to silently drop the rest of the document; previously a single
+  // page throwing would reject the whole extraction, which (given the 30s
+  // overall timeout) could look indistinguishable from "parsing found way
+  // fewer holdings than expected" instead of surfacing as a clear error.
+  // pagesFailed lists which page numbers didn't extract, so that's visible
+  // as a real diagnostic instead of a silent gap.
   async function extractPdfText(arrayBuffer, password) {
     const pdfjsLib = await loadPdfJs();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, password }).promise;
     let fullText = "";
+    const pagesFailed = [];
     for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      // Group text items into lines by y-position, then sort each line
-      // left-to-right by x-position, instead of just concatenating items in
-      // whatever order pdf.js returns them. CAS statements are laid out in
-      // tables/columns, and without this, cells from different columns (or
-      // even different rows) get run together on one line, which breaks any
-      // regex trying to match "label near a value" — see parseCasText below.
-      const Y_TOLERANCE = 2;
-      const lines = [];
-      for (const item of content.items) {
-        if (!item.str) continue;
-        const y = item.transform[5];
-        const x = item.transform[4];
-        let line = lines.find((l) => Math.abs(l.y - y) <= Y_TOLERANCE);
-        if (!line) {
-          line = { y, parts: [] };
-          lines.push(line);
+      try {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        // Group text items into lines by y-position, then sort each line
+        // left-to-right by x-position, instead of just concatenating items
+        // in whatever order pdf.js returns them. CAS statements are laid
+        // out in tables/columns, and without this, cells from different
+        // columns (or even different rows) get run together on one line,
+        // which breaks any regex trying to match "label near a value" —
+        // see parseCasText below.
+        const Y_TOLERANCE = 2;
+        const lines = [];
+        for (const item of content.items) {
+          if (!item.str) continue;
+          const y = item.transform[5];
+          const x = item.transform[4];
+          let line = lines.find((l) => Math.abs(l.y - y) <= Y_TOLERANCE);
+          if (!line) {
+            line = { y, parts: [] };
+            lines.push(line);
+          }
+          line.parts.push({ x, str: item.str });
         }
-        line.parts.push({ x, str: item.str });
+        lines.sort((a, b) => b.y - a.y); // PDF y grows upward; top of page first
+        for (const line of lines) {
+          line.parts.sort((a, b) => a.x - b.x);
+          const lineText = line.parts
+            .map((p) => p.str)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (lineText) fullText += lineText + "\n";
+        }
+        fullText += "\n";
+      } catch (err) {
+        console.error(`CAS parse: page ${i} of ${pdf.numPages} failed to extract`, err);
+        pagesFailed.push(i);
       }
-      lines.sort((a, b) => b.y - a.y); // PDF y grows upward; top of page first
-      for (const line of lines) {
-        line.parts.sort((a, b) => a.x - b.x);
-        const lineText = line.parts
-          .map((p) => p.str)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim();
-        if (lineText) fullText += lineText + "\n";
-      }
-      fullText += "\n";
     }
-    return fullText;
+    return { text: fullText, totalPages: pdf.numPages, pagesOk: pdf.numPages - pagesFailed.length, pagesFailed };
   }
 
   // CAS text parser. Real CAS PDFs come in more than one shape depending on
@@ -860,6 +877,7 @@
     document.getElementById("casFileInput").value = "";
     document.getElementById("casPasswordInput").value = "";
     document.getElementById("casError").style.display = "none";
+    document.getElementById("casDiagLine").style.display = "none";
     document.getElementById("casDebugTextWrap").style.display = "none";
     document.getElementById("casDebugTextArea").value = "";
     const parseBtn = document.getElementById("casParseBtn");
@@ -897,12 +915,31 @@
 
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const text = await withTimeout(
+      // 60s, not 30s: a real multi-page CAS (each page needing its own
+      // decrypt + text-content pass) can genuinely take longer than a quick
+      // 1-2 page statement to read through.
+      const extracted = await withTimeout(
         extractPdfText(arrayBuffer, password),
-        30000,
+        60000,
         "Timed out reading this PDF — the reader may have failed to load, or the file's too large. Try refreshing the page and trying again."
       );
+      const { text, totalPages, pagesOk, pagesFailed } = extracted;
       const holdings = parseCasText(text);
+
+      // Count-only diagnostic (page counts + a rough unique-ISIN count) —
+      // no names/amounts — so a "found way fewer holdings than expected"
+      // report can be narrowed down to "extraction didn't read every page"
+      // vs "the page text is there but the regex isn't matching most of
+      // it" without needing to share any real statement content.
+      const uniqueIsins = new Set((text.match(/\bIN[A-Z0-9]{10}\b/g) || []));
+      const diagText =
+        `Read ${pagesOk}/${totalPages} page(s)` +
+        (pagesFailed.length ? ` (pages failed: ${pagesFailed.join(", ")})` : "") +
+        ` · ${uniqueIsins.size} unique ISIN(s) seen in the text · ${holdings.length} holding(s) parsed.`;
+      console.log("CAS parse diagnostic:", diagText);
+      document.getElementById("casDiagLine").textContent = diagText;
+      document.getElementById("casDiagLine").style.display = "block";
+
       if (holdings.length === 0) {
         // Debug aid: show a short, auto-redacted sample (see
         // buildDebugSample) in a plain textarea so it can be selected and
