@@ -3,851 +3,956 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kosha — Dashboard Mockup (Dark)</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<!-- CAS PDFs are parsed entirely client-side (never uploaded as a raw file — see the
-     Decision Log: a spike measured 35-44ms CPU to decrypt+read one, over the Workers
-     free-tier's 10ms/request cap). pdf.js v5+ dropped the old global-script UMD build
-     in favor of ES modules only, so it's loaded via dynamic import() in the script
-     below (see loadPdfJs()) rather than a <script src> tag — there's no window.pdfjsLib
-     global anymore. If the browser console shows a 404 on either .mjs file, check
-     https://cdnjs.com/libraries/pdf.js for the current version/paths and update the
-     two URLs inside loadPdfJs(). -->
+<title>HydroBuddy — Your Water Reminder Companion</title>
 <style>
-  :root {
-    --bg: #0c0f0d;
-    --sidebar: #101312;
-    --card: #15201a;
-    --card-2: #121815;
-    --line: #223028;
-    --ink: #eef4f0;
-    --muted: #7f9086;
-    --accent: #baf23c;
-    --accent-dim: #2c3a26;
-    --danger: #ff8a65;
-    --radius: 16px;
+  :root{
+    --primary:#2f9bf0;
+    --primary-dark:#1c7dd1;
+    --bg-top:#eaf6ff;
+    --bg-bottom:#dcefff;
+    --card:#ffffff;
+    --ink:#1c2b3a;
+    --ink-soft:#5b7286;
+    --danger:#ff6b6b;
+    --success:#3ac488;
+    --radius:18px;
+    --shadow:0 10px 30px rgba(31,90,150,0.12);
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
   }
-  .app { display: flex; min-height: 100vh; }
+  #app{flex:1; display:flex; flex-direction:column; min-height:100vh;}
 
-  /* Sidebar */
-  .sidebar {
-    width: 220px; background: var(--sidebar); border-right: 1px solid var(--line);
-    padding: 18px 14px; display: flex; flex-direction: column; gap: 18px;
-  }
-  .logo { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
-  .logo .mark {
-    width: 30px; height: 30px; border-radius: 8px; background: var(--accent);
-    color: #10240a; display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 15px;
-  }
-  .logo b { font-size: 15px; }
-  .search {
-    background: var(--card-2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 8px 10px; font-size: 12px; color: var(--muted);
-  }
-  nav.navlist { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
-  .nav-section { font-size: 10px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; margin: 10px 4px 2px; }
-  .nav-item {
-    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px;
-    font-size: 13px; color: var(--muted);
-  }
-  .nav-item.active { background: var(--accent); color: #10240a; font-weight: 700; }
-  .sidebar-foot {
-    margin-top: auto; font-size: 10px; color: var(--muted);
-    border-top: 1px solid var(--line); padding-top: 12px;
-  }
+  .screen{display:none; flex:1; align-items:center; justify-content:center; padding:24px;}
+  .screen.active{display:flex;}
 
-  /* Main */
-  .main { flex: 1; padding: 18px 20px; min-width: 0; }
-  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .crumb { font-size: 12px; color: var(--muted); }
-  .crumb b { color: var(--ink); }
-  .top-actions { display: flex; align-items: center; gap: 10px; }
-  select.month-select {
-    background: var(--card-2); border: 1px solid var(--line); color: var(--ink);
-    border-radius: 8px; padding: 7px 10px; font-size: 12px;
+  .card{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:32px;
+    width:100%;
+    max-width:420px;
   }
-  .icon-chip {
-    width: 32px; height: 32px; border-radius: 9px; background: var(--card-2);
-    border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
-    font-size: 13px;
-  }
+  .card.wide{max-width:760px;}
 
-  .content-cols { display: grid; grid-template-columns: 1fr 260px; gap: 16px; }
-
-  .cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
-  .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 15px;
+  h1.brand{
+    font-size:26px; margin:0 0 4px; color:var(--primary-dark); display:flex; align-items:center; gap:8px;
   }
-  .card .label { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
-  .card .value { font-size: 21px; font-weight: 800; }
-  .card .delta { font-size: 11px; margin-top: 6px; color: var(--muted); }
-  .delta.up { color: var(--accent); }
-  .delta.down { color: var(--danger); }
-  .accounts-mini { display: flex; gap: 6px; margin-top: 8px; }
-  .bank-chip {
-    font-size: 10px; padding: 3px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent);
+  .subtitle{color:var(--ink-soft); margin:0 0 24px; font-size:14px;}
+
+  label{display:block; font-size:13px; font-weight:600; color:var(--ink-soft); margin:14px 0 6px;}
+  input[type=text], input[type=email], input[type=password], input[type=number]{
+    width:100%; padding:11px 12px; border-radius:10px; border:1.5px solid #d7e6f2; font-size:15px; outline:none; transition:border .15s;
+  }
+  input:focus{border-color:var(--primary);}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    padding:12px 20px; border-radius:12px; border:none; font-size:15px; font-weight:600;
+    cursor:pointer; transition:transform .08s, box-shadow .15s, background .15s;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-primary{background:var(--primary); color:#fff; box-shadow:0 6px 16px rgba(47,155,240,.35);}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-block{width:100%; margin-top:18px;}
+  .btn-outline{background:#fff; color:var(--primary-dark); border:1.5px solid var(--primary);}
+  .btn-ghost{background:transparent; color:var(--ink-soft); border:1.5px solid #d7e6f2;}
+  .btn-success{background:var(--success); color:#fff;}
+  .btn-danger{background:var(--danger); color:#fff;}
+  .btn-sm{padding:8px 14px; font-size:13px; border-radius:9px;}
+
+  .link-btn{background:none;border:none;color:var(--primary-dark);font-weight:600;cursor:pointer;font-size:13px;padding:0;}
+
+  .error-msg{color:var(--danger); font-size:13px; margin-top:8px; min-height:16px;}
+  .hint{font-size:12px; color:var(--ink-soft); margin-top:6px; line-height:1.5;}
+  .disclaimer{
+    margin-top:18px; padding:10px 12px; background:#fff7e6; border:1px solid #ffe4a3; border-radius:10px;
+    font-size:11.5px; color:#8a6d1d; line-height:1.5;
   }
 
-  .panels-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 12px; }
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  .panel h2 { font-size: 13px; margin: 0 0 10px; font-weight: 700; }
-  .panel h2 .muted { color: var(--muted); font-weight: 400; }
+  .tabs{display:flex; gap:6px; margin-bottom:6px;}
+  .tab-btn{flex:1; padding:10px; border-radius:10px; border:none; background:#eef5fb; color:var(--ink-soft); font-weight:600; cursor:pointer; font-size:14px;}
+  .tab-btn.active{background:var(--primary); color:#fff;}
 
-  .stack-mini { display: flex; flex-direction: column; gap: 12px; }
-  .mini-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
-  .mini-card .t { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-  .account-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 12px; }
-  .account-left { display: flex; align-items: center; gap: 8px; }
-  .bank-badge {
-    width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 800;
+  /* ---------- Avatar builder layout ---------- */
+  .builder-grid{display:flex; gap:28px; flex-wrap:wrap;}
+  .builder-stage-col{flex:1; min-width:240px; display:flex; flex-direction:column; align-items:center;}
+  .builder-controls-col{flex:1; min-width:240px;}
+  .swatches{display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;}
+  .swatch{
+    width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 0 2px #d7e6f2, var(--shadow);
+    cursor:pointer;
   }
-  .bank-badge.hdfc { background: #2a4a34; color: #baf23c; }
-  .bank-badge.axis { background: #3a2a4a; color: #e0b0ff; }
-  .bank-badge.icici { background: #4a3a2a; color: #ffb066; }
-  .bank-badge.sbi { background: #2a3a4a; color: #8fd0ff; }
-  .bank-badge.other { background: #2a2a2a; color: #cfcfcf; }
+  .swatch.selected{box-shadow:0 0 0 3px var(--primary-dark);}
+  .accessory-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+  .chip{
+    padding:8px 14px; border-radius:20px; border:1.5px solid #d7e6f2; background:#fff; color:var(--ink-soft);
+    font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .chip.selected{background:var(--primary); border-color:var(--primary); color:#fff;}
 
-  table.txn-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  table.txn-table th {
-    text-align: left; font-size: 10px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: 0.4px; padding: 6px 8px; border-bottom: 1px solid var(--line);
-  }
-  table.txn-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
-  table.txn-table tr:last-child td { border-bottom: none; }
-  .src-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent); }
-  .unparsed-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #4a2f22; color: #ff9d6b; }
-  .netted-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #223028; color: #7f9086; }
+  /* ---------- 3D avatar rig (pure CSS 3D transforms — no external libs) ---------- */
+  .rig-stage{ perspective:900px; width:220px; height:260px; position:relative; }
+  .rig-stage.stage-sm{ width:140px; height:170px; }
+  .rig-stage.stage-lg{ width:260px; height:300px; }
+  .node3d{ position:absolute; left:50%; top:50%; width:0; height:0; transform-style:preserve-3d; }
+  .face3d{ position:absolute; top:0; left:0; backface-visibility:hidden; border-radius:6px; box-shadow:inset 0 0 14px rgba(0,0,0,0.10); }
 
-  .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-    display: none; align-items: center; justify-content: center; z-index: 100;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal-card {
-    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 20px; width: 420px; max-width: 92vw; max-height: 86vh; overflow-y: auto;
-  }
-  .modal-card h3 { margin: 0 0 4px; font-size: 15px; }
-  .modal-card .sub { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
-  .modal-field { margin-bottom: 12px; }
-  .modal-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
-  .modal-field input {
-    width: 100%; background: var(--card-2); border: 1px solid var(--line); color: var(--ink);
-    border-radius: 8px; padding: 8px 10px; font-size: 13px; box-sizing: border-box;
-  }
-  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-  .modal-btn-secondary {
-    background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
-    padding: 8px 14px; font-size: 12px; cursor: pointer;
-  }
-  .modal-btn-primary {
-    background: var(--accent); color: #10240a; border: none; border-radius: 8px;
-    padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
-  }
-  .modal-btn-primary:disabled { opacity: 0.5; cursor: default; }
-  .modal-error { font-size: 12px; color: var(--danger); margin-top: 8px; display: none; }
-  .holding-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; gap: 8px;
-  }
-  .holding-row:last-child { border-bottom: none; }
-  .holding-remove { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 14px; padding: 2px 6px; }
-  .amt.debit { font-weight: 700; }
-  .amt.credit { font-weight: 700; color: var(--accent); }
+  .rig-mount{ transform:translate3d(0,0,0); }
+  .rig-view{ transform: rotateX(-8deg) rotateY(-32deg); animation:idleSpin 9s linear infinite; }
+  .rig-view.no-spin{ animation:none; }
+  .rig-body{ animation: idleBob 2.2s ease-in-out infinite; }
 
-  .cta-card {
-    background: linear-gradient(160deg, var(--accent), #7bbf1a);
-    color: #10240a; border-radius: var(--radius); padding: 16px;
+  @keyframes idleSpin{ from{ transform: rotateX(-8deg) rotateY(-32deg);} to{ transform: rotateX(-8deg) rotateY(328deg);} }
+  @keyframes idleBob{ 0%,100%{ transform:translate3d(0,0,0);} 50%{ transform:translate3d(0,-6px,0);} }
+
+  @keyframes legSwing{ 0%,100%{ transform:rotateX(30deg);} 50%{ transform:rotateX(-30deg);} }
+  .walking .swing.leg-left{ animation: legSwing .62s ease-in-out infinite; }
+  .walking .swing.leg-right{ animation: legSwing .62s ease-in-out infinite reverse; }
+  .walking .swing.arm-left{ animation: legSwing .62s ease-in-out infinite reverse; }
+  .walking .swing.arm-right{ animation: legSwing .62s ease-in-out infinite; }
+
+  @keyframes sipMotion{
+    0%,100%{ transform:rotateX(0deg); }
+    35%,55%{ transform:rotateZ(-14deg) rotateX(-172deg); }
+    80%{ transform:rotateX(0deg); }
   }
-  .cta-card .t { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
-  .cta-card .d { font-size: 11px; opacity: 0.85; margin-bottom: 10px; }
-  .cta-btn {
-    background: #10240a; color: var(--accent); border: none; border-radius: 8px;
-    padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  .sipping .swing.arm-right{ animation: sipMotion 1.6s ease-in-out 2; }
+
+  /* ---------- Reminder settings ---------- */
+  .interval-row, .snooze-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;}
+  .custom-inline{display:flex; align-items:center; gap:8px; margin-top:10px;}
+  .custom-inline input{width:90px;}
+  .toggle-row{display:flex; align-items:center; gap:10px; margin-top:16px; padding:12px; background:#f3f9ff; border-radius:12px;}
+
+  /* ---------- Dashboard ---------- */
+  #screen-dashboard{align-items:flex-start;}
+  .dash-wrap{width:100%; max-width:900px; margin:0 auto;}
+  .dash-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
+  .dash-header h2{margin:0; font-size:22px;}
+  .dash-header .sub{color:var(--ink-soft); font-size:13px; margin-top:2px;}
+  .header-actions{display:flex; gap:8px;}
+  .icon-btn{background:#fff; border:1.5px solid #d7e6f2; border-radius:10px; padding:9px 12px; cursor:pointer; font-size:16px;}
+
+  .dash-grid{display:grid; grid-template-columns:1.1fr 1fr; gap:20px;}
+  @media (max-width:720px){ .dash-grid{grid-template-columns:1fr;} }
+
+  .stat-row{display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;}
+  .stat-tile{flex:1; min-width:110px; background:var(--card); border-radius:14px; padding:16px; text-align:center; box-shadow:var(--shadow);}
+  .stat-tile .num{font-size:26px; font-weight:700; color:var(--primary-dark);}
+  .stat-tile .lbl{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+
+  .panel{background:var(--card); border-radius:16px; padding:20px; box-shadow:var(--shadow);}
+  .panel h3{margin:0 0 12px; font-size:15px;}
+  .avatar-panel{display:flex; flex-direction:column; align-items:center;}
+  .avatar-panel .petname{font-weight:700; margin-top:6px;}
+
+  .log-list{list-style:none; margin:0; padding:0; font-size:13px; color:var(--ink-soft); max-height:170px; overflow:auto;}
+  .log-list li{padding:7px 0; border-bottom:1px dashed #e3edf5; display:flex; justify-content:space-between;}
+
+  /* ---------- Reminder popup ---------- */
+  #popup-overlay{
+    position:fixed; inset:0; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(20,40,60,0.35); z-index:50;
+  }
+  #popup-overlay.active{display:flex;}
+  .popup-scene{
+    width:100%; max-width:640px; height:340px; position:relative; overflow:hidden;
+    background:linear-gradient(180deg,#bfe4ff 0%, #eaf7ff 55%, #d9f0e0 55%, #cdeacb 100%);
+    border-radius:24px 24px 0 0; box-shadow:0 -10px 40px rgba(0,0,0,0.25);
+  }
+  .rig-floor{ position:absolute; left:0; bottom:56px; width:100%; height:0; }
+  .rig-stage-popup{ position:absolute; bottom:0; left:0; width:100%; height:280px; perspective:1000px; }
+  .walker{ position:absolute; left:0; bottom:0; }
+
+  .speech-bubble{
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
+    background:#fff; padding:12px 18px; border-radius:16px; font-weight:600; box-shadow:var(--shadow);
+    opacity:0; transition:opacity .3s; pointer-events:none; text-align:center; max-width:80%;
+  }
+  .speech-bubble.show{opacity:1;}
+  .speech-bubble:after{
+    content:''; position:absolute; bottom:-9px; left:50%; transform:translateX(-50%);
+    border-width:10px 8px 0; border-style:solid; border-color:#fff transparent transparent;
   }
 
-  .activity-item { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
-  .activity-item:last-child { border-bottom: none; }
-  .activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
-  .activity-time { color: var(--muted); font-size: 10px; }
-
-  .trust-line {
-    margin-top: 14px; font-size: 11px; color: var(--muted); text-align: center;
+  .popup-actions{
+    position:absolute; bottom:16px; left:0; width:100%; display:flex; justify-content:center; gap:14px;
+    opacity:0; transition:opacity .3s; pointer-events:none;
   }
-  .trust-line b { color: var(--accent); }
+  .popup-actions.show{opacity:1; pointer-events:auto;}
 
-  @media (max-width: 900px) {
-    .content-cols { grid-template-columns: 1fr; }
-    .cards-row { grid-template-columns: repeat(2, 1fr); }
-    .panels-row { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
+  .snooze-picker{
+    position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+    background:#fff; border-radius:16px; padding:14px; box-shadow:var(--shadow);
+    display:none; flex-direction:column; align-items:center; gap:10px; width:88%; max-width:420px;
   }
+  .snooze-picker.show{display:flex;}
+  .snooze-chip-row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center;}
+
+  footer.tiny{
+    text-align:center; font-size:11px; color:var(--ink-soft); padding:10px;
+  }
+
+  .row-between{display:flex; justify-content:space-between; align-items:center;}
 </style>
 </head>
 <body>
-<div class="app">
+<div id="app">
 
-  <aside class="sidebar">
-    <div class="logo"><div class="mark">K</div><b>Kosha</b></div>
-    <div class="search">🔍 Search…</div>
-    <nav class="navlist">
-      <div class="nav-section">Dashboards</div>
-      <div class="nav-item active">📊 Overview</div>
-      <div class="nav-item">💳 Transactions</div>
-      <div class="nav-item">📈 Investments</div>
-      <div class="nav-item">🏦 Accounts</div>
-      <div class="nav-section">Settings</div>
-      <div class="nav-item">🔒 PIN &amp; Security</div>
-      <div class="nav-item">⚙️ Preferences</div>
-    </nav>
-    <div class="sidebar-foot">Self-hosted instance<br>Your data never leaves your database</div>
-  </aside>
+  <!-- ============ AUTH SCREEN ============ -->
+  <section id="screen-auth" class="screen active">
+    <div class="card">
+      <h1 class="brand">💧 HydroBuddy</h1>
+      <p class="subtitle">A little avatar that reminds you to drink water.</p>
 
-  <main class="main">
-    <div class="topbar">
-      <div class="crumb">Dashboards / <b>Overview</b></div>
-      <div class="top-actions">
-        <div class="icon-chip">🔒</div>
-        <div class="icon-chip">⟳</div>
-        <select class="month-select" id="monthSelect"></select>
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-login" onclick="switchAuthTab('login')">Log In</button>
+        <button class="tab-btn" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</button>
+      </div>
+
+      <form id="form-login" onsubmit="return handleLogin(event)">
+        <label>Email</label>
+        <input type="email" id="login-email" required placeholder="you@example.com">
+        <label>Password</label>
+        <input type="password" id="login-password" required placeholder="••••••••">
+        <div class="error-msg" id="login-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Log In</button>
+      </form>
+
+      <form id="form-signup" style="display:none;" onsubmit="return handleSignup(event)">
+        <label>Your name</label>
+        <input type="text" id="signup-name" required placeholder="Simran">
+        <label>Email</label>
+        <input type="email" id="signup-email" required placeholder="you@example.com">
+        <label>Password</label>
+        <input type="password" id="signup-password" required placeholder="min. 4 characters" minlength="4">
+        <div class="error-msg" id="signup-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+      </form>
+
+      <div class="disclaimer">
+        Demo app: accounts &amp; data are stored only in this browser (localStorage) — nothing is sent to a server. Please don't reuse a real password.
       </div>
     </div>
+  </section>
 
-    <div class="content-cols">
-      <div>
-        <div class="panel" id="reviewPanel" style="display:none; margin-bottom:14px;">
-          <h2>Needs review <span class="muted">· flagged as unparsed</span></h2>
-          <div id="reviewList"></div>
+  <!-- ============ AVATAR BUILDER SCREEN ============ -->
+  <section id="screen-avatar" class="screen">
+    <div class="card wide">
+      <h1 class="brand">🎨 Build Your Buddy</h1>
+      <p class="subtitle">This little guy will walk in every time it's time to hydrate.</p>
+      <div class="builder-grid">
+        <div class="builder-stage-col">
+          <div class="rig-stage stage-lg" id="builder-stage"></div>
+          <div class="petname" id="builder-petname-preview">Chip</div>
         </div>
+        <div class="builder-controls-col">
+          <label>Buddy's name</label>
+          <input type="text" id="avatar-petname" maxlength="16" placeholder="e.g. Chip, Drippy, Aqua" value="Chip">
 
-        <div class="cards-row">
-          <div class="card">
-            <div class="label">Total balance (all accounts)</div>
-            <div class="value" id="totalBalanceValue">—</div>
-            <div class="accounts-mini" id="accountsMiniChips"></div>
+          <label>Body color</label>
+          <div class="swatches" id="color-swatches"></div>
+
+          <label>Accessory</label>
+          <div class="accessory-row" id="accessory-row">
+            <button type="button" class="chip selected" data-accessory="none">None</button>
+            <button type="button" class="chip" data-accessory="cap">Cap</button>
+            <button type="button" class="chip" data-accessory="glasses">Glasses</button>
+            <button type="button" class="chip" data-accessory="bow">Bow</button>
           </div>
-          <div class="card">
-            <div class="label">Spent this month</div>
-            <div class="value" id="spentThisMonthValue">—</div>
-            <div class="delta" id="spentDelta"></div>
-          </div>
-          <div class="card">
-            <div class="label">Net worth</div>
-            <div class="value" id="netWorthValue">—</div>
-            <div class="delta" id="netWorthDelta"></div>
-          </div>
-          <div class="card">
-            <div class="label">Unparsed messages</div>
-            <div class="value" id="unparsedValue">—</div>
-            <div class="delta" id="unparsedDelta"></div>
-          </div>
+
+          <button class="btn btn-primary btn-block" onclick="saveAvatarAndContinue()">Continue → Set Reminders</button>
         </div>
+      </div>
+    </div>
+  </section>
 
-        <div class="panels-row">
+  <!-- ============ REMINDER SETTINGS SCREEN ============ -->
+  <section id="screen-reminder" class="screen">
+    <div class="card">
+      <h1 class="brand">⏰ Reminder Settings</h1>
+      <p class="subtitle">How often should your buddy check in on you?</p>
+
+      <label>Remind me every</label>
+      <div class="interval-row" id="interval-row">
+        <button type="button" class="chip" data-mins="30">30 min</button>
+        <button type="button" class="chip" data-mins="60">1 hr</button>
+        <button type="button" class="chip selected" data-mins="120">2 hr</button>
+        <button type="button" class="chip" data-mins="180">3 hr</button>
+        <button type="button" class="chip" data-mins="240">4 hr</button>
+        <button type="button" class="chip" data-mins="custom">Custom</button>
+      </div>
+      <div class="custom-inline" id="interval-custom-wrap" style="display:none;">
+        <input type="number" id="interval-custom-input" min="1" placeholder="minutes">
+        <span class="hint">minutes</span>
+      </div>
+
+      <label>Default snooze duration</label>
+      <div class="snooze-row" id="snooze-default-row">
+        <button type="button" class="chip" data-mins="5">5 min</button>
+        <button type="button" class="chip selected" data-mins="10">10 min</button>
+        <button type="button" class="chip" data-mins="15">15 min</button>
+        <button type="button" class="chip" data-mins="20">20 min</button>
+        <button type="button" class="chip" data-mins="30">30 min</button>
+        <button type="button" class="chip" data-mins="custom">Custom</button>
+      </div>
+      <div class="custom-inline" id="snooze-custom-wrap" style="display:none;">
+        <input type="number" id="snooze-custom-input" min="1" placeholder="minutes">
+        <span class="hint">minutes</span>
+      </div>
+
+      <div class="toggle-row">
+        <input type="checkbox" id="notif-toggle" style="width:auto;">
+        <label style="margin:0; flex:1;" for="notif-toggle">Also send a browser notification when it's time (works while this tab is open in the background)</label>
+      </div>
+
+      <button class="btn btn-primary btn-block" onclick="saveReminderAndContinue()">Save &amp; Go to Dashboard</button>
+    </div>
+  </section>
+
+  <!-- ============ DASHBOARD SCREEN ============ -->
+  <section id="screen-dashboard" class="screen">
+    <div class="dash-wrap">
+      <div class="dash-header">
+        <div>
+          <h2 id="dash-greeting">Hi there 👋</h2>
+          <div class="sub" id="dash-sub">Let's stay hydrated today.</div>
+        </div>
+        <div class="header-actions">
+          <button class="icon-btn" title="Reminder settings" onclick="goToScreen('screen-reminder', true)">⚙️</button>
+          <button class="icon-btn" title="Log out" onclick="handleLogout()">🚪</button>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div>
+          <div class="stat-row">
+            <div class="stat-tile"><div class="num" id="stat-streak">0</div><div class="lbl">Day streak</div></div>
+            <div class="stat-tile"><div class="num" id="stat-today">0</div><div class="lbl">Drinks today</div></div>
+            <div class="stat-tile"><div class="num" id="stat-countdown">--:--</div><div class="lbl">Next reminder</div></div>
+          </div>
+
           <div class="panel">
-            <h2>Spending overview <span class="muted">· <span id="categoryMonthLabel"></span></span></h2>
-            <canvas id="categoryChart" height="190"></canvas>
-          </div>
-          <div class="stack-mini">
-            <div class="mini-card">
-              <div class="t">Linked accounts</div>
-              <div id="linkedAccountsList"></div>
-              <div class="account-row" style="opacity:.5;">
-                <div class="account-left"><span class="bank-badge other">+</span> Add account</div>
-                <span>—</span>
-              </div>
-            </div>
-            <div class="mini-card">
-              <div class="t">This month's savings</div>
-              <canvas id="savingsSpark" height="70"></canvas>
-            </div>
+            <h3>Recent activity</h3>
+            <ul class="log-list" id="log-list"><li>No drinks logged yet — your buddy is waiting!</li></ul>
           </div>
         </div>
 
-        <div class="panel" style="margin-bottom:14px;">
-          <h2>Last 6 months <span class="muted">· spending vs income</span></h2>
-          <canvas id="trendChart" height="80"></canvas>
-        </div>
-
-        <div class="panel">
-          <h2>Recent transactions</h2>
-          <table class="txn-table">
-            <tr><th>Date</th><th>Vendor</th><th>Account</th><th>Source</th><th style="text-align:right;">Amount</th></tr>
-            <tbody id="recentTxnBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="stack-mini">
-        <div class="cta-card">
-          <div class="t">New CAS should have landed</div>
-          <div class="d">Upload it to update your investments &amp; net worth</div>
-          <button class="cta-btn" id="uploadCasBtn">Upload CAS PDF</button>
-        </div>
-
-        <div class="mini-card">
-          <div class="t">Investments snapshot <span id="investmentsAsOfLabel" style="font-weight:400; color:var(--muted);"></span></div>
-          <div class="account-row"><span>SIPs</span><b id="invSipValue">—</b></div>
-          <div class="account-row"><span>Stocks</span><b id="invStockValue">—</b></div>
-          <div class="account-row"><span>FDs</span><b id="invFdValue">—</b></div>
-          <div class="account-row"><span>RDs</span><b id="invRdValue">—</b></div>
-        </div>
-
-        <div class="mini-card">
-          <div class="t">Activity</div>
-          <div class="activity-item">
-            <span class="activity-dot"></span>
-            <div>Evening nudge sent — 1 cash spend confirmed<div class="activity-time">Today, 8:02 PM</div></div>
-          </div>
-          <div class="activity-item">
-            <span class="activity-dot"></span>
-            <div>Axis message flagged as unparsed<div class="activity-time">Today, 3:14 PM</div></div>
-          </div>
-          <div class="activity-item">
-            <span class="activity-dot"></span>
-            <div>CAS reminder sent<div class="activity-time">5 Jul, 9:00 AM</div></div>
-          </div>
+        <div class="panel avatar-panel">
+          <h3 style="align-self:flex-start;">Your Buddy</h3>
+          <div class="rig-stage stage-sm" id="dashboard-stage"></div>
+          <div class="petname" id="dashboard-petname">Chip</div>
+          <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="triggerReminderNow()">Trigger reminder now (test)</button>
         </div>
       </div>
     </div>
+  </section>
 
-    <div class="trust-line">Your data lives only in <b>your own</b> database — never shared, sold, or seen by anyone else.</div>
-  </main>
-</div>
-
-<!-- CAS upload modal. The PDF and its password are handled entirely by
-     pdf.js in this tab — nothing here is ever sent to the Worker except the
-     already-parsed holdings, after the person confirms the preview. -->
-<div class="modal-overlay" id="casModalOverlay">
-  <div class="modal-card">
-    <div id="casStepUpload">
-      <h3>Upload CAS PDF</h3>
-      <div class="sub">Parsed entirely in your browser — the file and its password never get sent anywhere.</div>
-      <div class="modal-field">
-        <label>CAS PDF file</label>
-        <input type="file" id="casFileInput" accept="application/pdf">
+  <!-- ============ REMINDER POPUP ============ -->
+  <div id="popup-overlay">
+    <div class="popup-scene">
+      <div class="speech-bubble" id="speech-bubble">Time to drink water! 💧</div>
+      <div class="rig-stage-popup" id="popup-stage"></div>
+      <div class="popup-actions" id="popup-actions">
+        <button class="btn btn-success" onclick="handleDrank()">💧 I Drank It</button>
+        <button class="btn btn-outline" onclick="openSnoozePicker()">⏰ Snooze</button>
       </div>
-      <div class="modal-field">
-        <label>Password (usually your PAN)</label>
-        <input type="password" id="casPasswordInput" placeholder="e.g. ABCDE1234F" autocomplete="off">
-      </div>
-      <div class="modal-error" id="casError"></div>
-      <div class="modal-actions">
-        <button class="modal-btn-secondary" id="casCancelBtn">Cancel</button>
-        <button class="modal-btn-primary" id="casParseBtn">Parse</button>
-      </div>
-    </div>
-
-    <div id="casStepPreview" style="display:none;">
-      <h3>Found <span id="casHoldingCount">0</span> holding(s)</h3>
-      <div class="sub">Total <span id="casHoldingTotal">₹0</span> — remove anything that looks wrong, then confirm.</div>
-      <div id="casHoldingsList"></div>
-      <div class="modal-error" id="casSaveError"></div>
-      <div class="modal-actions">
-        <button class="modal-btn-secondary" id="casBackBtn">Back</button>
-        <button class="modal-btn-primary" id="casConfirmBtn">Looks right — save</button>
+      <div class="snooze-picker" id="snooze-picker">
+        <div style="font-weight:600; font-size:14px;">Snooze for how long?</div>
+        <div class="snooze-chip-row" id="snooze-picker-row">
+          <button type="button" class="chip" data-mins="5">5 min</button>
+          <button type="button" class="chip" data-mins="10">10 min</button>
+          <button type="button" class="chip" data-mins="15">15 min</button>
+          <button type="button" class="chip" data-mins="20">20 min</button>
+          <button type="button" class="chip" data-mins="30">30 min</button>
+          <button type="button" class="chip" data-mins="60">1 hr</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="closeSnoozePicker()">Cancel</button>
       </div>
     </div>
   </div>
+
 </div>
 
 <script>
-  const CATEGORY_COLORS = ["#baf23c", "#8fd15e", "#5fae6e", "#3f8a6a", "#2c6a5c", "#1c4a44", "#164039", "#0f302b"];
-  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+/* =====================================================================
+   HydroBuddy — self-contained single-file demo
+   - "3D" avatar built entirely with real CSS 3D transforms
+     (perspective + preserve-3d + rotateX/Y/Z), no external libraries.
+   - Auth / avatar / reminders / stats all persisted to localStorage.
+   ===================================================================== */
 
-  function monthLabel(monthKey) {
-    const [y, m] = monthKey.split("-").map(Number);
-    return `${MONTH_NAMES[m - 1]} ${y}`;
+const DB_KEY = 'hydrobuddy_db_v1';
+const COLOR_OPTIONS = ['#3fa9f5','#ff8a5c','#7ed957','#b06cf0','#ff6bab','#ffd23f','#4dd0c9','#6c7bff'];
+
+let popupOpen = false;
+let tickTimer = null;
+
+/* ---------------- persistence ---------------- */
+function loadDB(){
+  try{
+    return JSON.parse(localStorage.getItem(DB_KEY)) || { users:{}, currentUser:null };
+  }catch(e){ return { users:{}, currentUser:null }; }
+}
+function saveDB(db){ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+function defaultUser(name, email, password){
+  return {
+    name, email, password,
+    onboarded:false,
+    avatar:{ color: COLOR_OPTIONS[0], accessory:'none', petName:'Chip' },
+    reminder:{ intervalMinutes:120, snoozeMinutes:10, notifications:false },
+    stats:{ streak:0, lastDrinkDate:null, drinksToday:0, log:[], nextReminderAt:null }
+  };
+}
+
+function getCurrentUser(){
+  const db = loadDB();
+  if(!db.currentUser) return null;
+  return db.users[db.currentUser] || null;
+}
+function updateCurrentUser(mutator){
+  const db = loadDB();
+  if(!db.currentUser) return;
+  const u = db.users[db.currentUser];
+  mutator(u);
+  saveDB(db);
+}
+
+/* ---------------- navigation ---------------- */
+function goToScreen(id, preload){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id==='screen-avatar') preloadAvatarScreen();
+  if(id==='screen-reminder') preloadReminderScreen();
+  if(id==='screen-dashboard') preloadDashboard();
+}
+
+/* ---------------- auth ---------------- */
+function switchAuthTab(which){
+  document.getElementById('tab-login').classList.toggle('active', which==='login');
+  document.getElementById('tab-signup').classList.toggle('active', which==='signup');
+  document.getElementById('form-login').style.display = which==='login' ? 'block':'none';
+  document.getElementById('form-signup').style.display = which==='signup' ? 'block':'none';
+}
+
+function handleSignup(e){
+  e.preventDefault();
+  const name = document.getElementById('signup-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim().toLowerCase();
+  const password = document.getElementById('signup-password').value;
+  const errEl = document.getElementById('signup-error');
+  const db = loadDB();
+  if(db.users[email]){
+    errEl.textContent = 'An account with that email already exists — try logging in.';
+    return false;
+  }
+  db.users[email] = defaultUser(name, email, password);
+  db.currentUser = email;
+  saveDB(db);
+  errEl.textContent='';
+  goToScreen('screen-avatar');
+  return false;
+}
+
+function handleLogin(e){
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const db = loadDB();
+  const u = db.users[email];
+  if(!u || u.password !== password){
+    errEl.textContent = 'Incorrect email or password.';
+    return false;
+  }
+  db.currentUser = email;
+  saveDB(db);
+  errEl.textContent='';
+  if(!u.onboarded){
+    goToScreen('screen-avatar');
+  } else {
+    ensureNextReminder(u);
+    saveDB(db);
+    goToScreen('screen-dashboard');
+  }
+  return false;
+}
+
+function handleLogout(){
+  stopTicking();
+  const db = loadDB();
+  db.currentUser = null;
+  saveDB(db);
+  document.getElementById('form-login').reset();
+  document.getElementById('form-signup').reset();
+  switchAuthTab('login');
+  goToScreen('screen-auth');
+}
+
+/* ---------------- avatar builder ---------------- */
+let builderState = { color: COLOR_OPTIONS[0], accessory:'none' };
+
+function preloadAvatarScreen(){
+  const u = getCurrentUser();
+  if(u && u.avatar){ builderState = { color:u.avatar.color, accessory:u.avatar.accessory }; document.getElementById('avatar-petname').value = u.avatar.petName; }
+
+  const swatchWrap = document.getElementById('color-swatches');
+  swatchWrap.innerHTML='';
+  COLOR_OPTIONS.forEach(c=>{
+    const d = document.createElement('div');
+    d.className = 'swatch' + (c===builderState.color ? ' selected':'');
+    d.style.background = c;
+    d.onclick = ()=>{ builderState.color=c; preloadAvatarScreen(); };
+    swatchWrap.appendChild(d);
+  });
+
+  document.querySelectorAll('#accessory-row .chip').forEach(btn=>{
+    btn.classList.toggle('selected', btn.dataset.accessory===builderState.accessory);
+    btn.onclick = ()=>{ builderState.accessory = btn.dataset.accessory; preloadAvatarScreen(); };
+  });
+
+  document.getElementById('builder-petname-preview').textContent = document.getElementById('avatar-petname').value || 'Chip';
+
+  renderRig('builder-stage', builderState, { size:'lg', spin:true });
+}
+
+document.addEventListener('input', (e)=>{
+  if(e.target && e.target.id==='avatar-petname'){
+    document.getElementById('builder-petname-preview').textContent = e.target.value || 'Chip';
+  }
+});
+
+function saveAvatarAndContinue(){
+  const petName = document.getElementById('avatar-petname').value.trim() || 'Chip';
+  updateCurrentUser(u=>{
+    u.avatar = { color: builderState.color, accessory: builderState.accessory, petName };
+  });
+  goToScreen('screen-reminder');
+}
+
+/* ---------------- reminder settings ---------------- */
+function preloadReminderScreen(){
+  const u = getCurrentUser();
+  if(!u) return;
+  setChipSelection('interval-row', u.reminder.intervalMinutes);
+  setChipSelection('snooze-default-row', u.reminder.snoozeMinutes);
+  document.getElementById('notif-toggle').checked = !!u.reminder.notifications;
+  wireIntervalChips();
+}
+
+function setChipSelection(rowId, mins){
+  const row = document.getElementById(rowId);
+  const wrapId = rowId==='interval-row' ? 'interval-custom-wrap':'snooze-custom-wrap';
+  const inputId = rowId==='interval-row' ? 'interval-custom-input':'snooze-custom-input';
+  let matched=false;
+  row.querySelectorAll('.chip').forEach(c=>{
+    const isMatch = c.dataset.mins == String(mins);
+    c.classList.toggle('selected', isMatch);
+    if(isMatch) matched=true;
+  });
+  if(!matched){
+    row.querySelector('[data-mins="custom"]').classList.add('selected');
+    document.getElementById(wrapId).style.display='flex';
+    document.getElementById(inputId).value = mins;
+  }
+}
+
+function wireIntervalChips(){
+  wireChipRow('interval-row', 'interval-custom-wrap');
+  wireChipRow('snooze-default-row', 'snooze-custom-wrap');
+}
+function wireChipRow(rowId, wrapId){
+  const row = document.getElementById(rowId);
+  row.querySelectorAll('.chip').forEach(btn=>{
+    btn.onclick = ()=>{
+      row.querySelectorAll('.chip').forEach(b=>b.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById(wrapId).style.display = btn.dataset.mins==='custom' ? 'flex':'none';
+    };
+  });
+}
+
+function readChipValue(rowId, customInputId){
+  const row = document.getElementById(rowId);
+  const sel = row.querySelector('.chip.selected');
+  if(!sel) return null;
+  if(sel.dataset.mins==='custom'){
+    const v = parseInt(document.getElementById(customInputId).value, 10);
+    return (v && v>0) ? v : null;
+  }
+  return parseInt(sel.dataset.mins, 10);
+}
+
+function saveReminderAndContinue(){
+  const intervalMinutes = readChipValue('interval-row','interval-custom-input') || 120;
+  const snoozeMinutes = readChipValue('snooze-default-row','snooze-custom-input') || 10;
+  const notifications = document.getElementById('notif-toggle').checked;
+
+  if(notifications && 'Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
   }
 
-  function inr(n) {
-    return "₹" + Math.round(n).toLocaleString("en-IN");
+  updateCurrentUser(u=>{
+    u.reminder = { intervalMinutes, snoozeMinutes, notifications };
+    u.onboarded = true;
+    u.stats.nextReminderAt = Date.now() + intervalMinutes*60000;
+  });
+  goToScreen('screen-dashboard');
+}
+
+/* ---------------- dashboard ---------------- */
+function preloadDashboard(){
+  const u = getCurrentUser();
+  if(!u) return;
+  document.getElementById('dash-greeting').textContent = `Hi, ${u.name.split(' ')[0]} 👋`;
+  document.getElementById('dash-sub').textContent = `${u.avatar.petName} is keeping an eye on your water intake.`;
+  document.getElementById('dashboard-petname').textContent = u.avatar.petName;
+  renderRig('dashboard-stage', u.avatar, { size:'sm', spin:false });
+  refreshStatsUI(u);
+  ensureNextReminder(u);
+  startTicking();
+}
+
+function refreshStatsUI(u){
+  document.getElementById('stat-streak').textContent = u.stats.streak;
+  document.getElementById('stat-today').textContent = u.stats.drinksToday;
+  const logEl = document.getElementById('log-list');
+  if(u.stats.log.length===0){
+    logEl.innerHTML = '<li>No drinks logged yet — your buddy is waiting!</li>';
+  } else {
+    logEl.innerHTML = u.stats.log.slice(-6).reverse().map(ts=>{
+      const d = new Date(ts);
+      return `<li><span>💧 Drank water</span><span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></li>`;
+    }).join('');
   }
+}
 
-  function bankSlug(bankName) {
-    const known = ["hdfc", "axis", "icici", "sbi"];
-    const slug = (bankName || "").toLowerCase();
-    return known.includes(slug) ? slug : "other";
+function ensureNextReminder(u){
+  if(!u.stats.nextReminderAt){
+    u.stats.nextReminderAt = Date.now() + u.reminder.intervalMinutes*60000;
   }
+}
 
-  let categoryChart, trendChart, savingsChart;
+function formatCountdown(ms){
+  if(ms<=0) return 'now!';
+  const totalSec = Math.ceil(ms/1000);
+  const h = Math.floor(totalSec/3600);
+  const m = Math.floor((totalSec%3600)/60);
+  const s = totalSec%60;
+  if(h>0) return `${h}h ${String(m).padStart(2,'0')}m`;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
 
-  function renderCards(data) {
-    document.getElementById("totalBalanceValue").textContent = inr(data.totalBalance);
-    document.getElementById("accountsMiniChips").innerHTML = data.accounts
-      .map((a) => `<span class="bank-chip">${a.bankName} ${inr(a.balance)}</span>`)
-      .join("");
+function startTicking(){
+  stopTicking();
+  tickTimer = setInterval(tick, 1000);
+  tick();
+}
+function stopTicking(){ if(tickTimer){ clearInterval(tickTimer); tickTimer=null; } }
 
-    document.getElementById("spentThisMonthValue").textContent = inr(data.spentThisMonth);
-    const deltaEl = document.getElementById("spentDelta");
-    if (data.spentLastMonth > 0) {
-      const pct = Math.round(((data.spentThisMonth - data.spentLastMonth) / data.spentLastMonth) * 100);
-      deltaEl.textContent = `${pct >= 0 ? "↑" : "↓"} ${Math.abs(pct)}% vs last month`;
-      deltaEl.className = "delta " + (pct >= 0 ? "down" : "up"); // spending up = shown as "down" (bad), matching the mockup's color convention
+function tick(){
+  const u = getCurrentUser();
+  if(!u) return;
+  const remaining = u.stats.nextReminderAt - Date.now();
+  const countdownEl = document.getElementById('stat-countdown');
+  if(countdownEl) countdownEl.textContent = formatCountdown(remaining);
+  if(!popupOpen && remaining<=0){
+    openReminderPopup();
+  }
+}
+
+function triggerReminderNow(){
+  updateCurrentUser(u=>{ u.stats.nextReminderAt = Date.now(); });
+}
+
+/* ---------------- reminder popup + walk-in animation ---------------- */
+function openReminderPopup(){
+  const u = getCurrentUser();
+  if(!u) return;
+  popupOpen = true;
+
+  const overlay = document.getElementById('popup-overlay');
+  const bubble = document.getElementById('speech-bubble');
+  const actions = document.getElementById('popup-actions');
+  const snoozePicker = document.getElementById('snooze-picker');
+
+  bubble.classList.remove('show');
+  actions.classList.remove('show');
+  snoozePicker.classList.remove('show');
+  overlay.classList.add('active');
+
+  bubble.textContent = `Time to drink water! 💧 — ${u.avatar.petName} says hi!`;
+
+  const stage = document.getElementById('popup-stage');
+  stage.innerHTML = '';
+  const { mount, rigView } = renderRig('popup-stage', u.avatar, { size:'popup', spin:false, returnRefs:true });
+  rigView.classList.add('no-spin');
+  mount.style.top = '64%';
+
+  // start off-screen left
+  mount.style.transition = 'none';
+  mount.style.transform = 'translate3d(-420px,0,0) scale(0.82)';
+  rigView.classList.add('walking');
+  // force reflow then animate to center
+  void mount.offsetWidth;
+  mount.style.transition = 'transform 2.3s cubic-bezier(.4,0,.2,1)';
+  mount.style.transform = 'translate3d(0px,0,0) scale(0.82)';
+
+  const onArrive = ()=>{
+    mount.removeEventListener('transitionend', onArrive);
+    rigView.classList.remove('walking');
+    rigView.classList.add('sipping');
+    bubble.classList.add('show');
+    actions.classList.add('show');
+  };
+  mount.addEventListener('transitionend', onArrive);
+
+  if(u.reminder.notifications && 'Notification' in window && Notification.permission==='granted' && document.hidden){
+    try{ new Notification('HydroBuddy 💧', { body:`${u.avatar.petName} says: time to drink water!` }); }catch(e){}
+  }
+}
+
+function closeReminderPopup(){
+  const overlay = document.getElementById('popup-overlay');
+  const stage = document.getElementById('popup-stage');
+  const mount = stage.querySelector('.rig-mount');
+  const actions = document.getElementById('popup-actions');
+  const bubble = document.getElementById('speech-bubble');
+  actions.classList.remove('show');
+  bubble.classList.remove('show');
+  closeSnoozePicker();
+
+  if(mount){
+    const rigView = mount.querySelector('.rig-view');
+    rigView.classList.remove('sipping');
+    rigView.classList.add('walking');
+    mount.style.transition = 'transform 1.8s ease-in';
+    mount.style.transform = 'translate3d(420px,0,0) scale(0.82)';
+    setTimeout(()=>{
+      overlay.classList.remove('active');
+      stage.innerHTML='';
+      popupOpen = false;
+    }, 1850);
+  } else {
+    overlay.classList.remove('active');
+    popupOpen = false;
+  }
+}
+
+function handleDrank(){
+  const now = Date.now();
+  const todayStr = new Date(now).toDateString();
+  updateCurrentUser(u=>{
+    const lastStr = u.stats.lastDrinkDate;
+    if(lastStr === todayStr){
+      u.stats.drinksToday += 1;
     } else {
-      deltaEl.textContent = "No data for last month yet";
-      deltaEl.className = "delta";
+      const yesterday = new Date(now - 86400000).toDateString();
+      u.stats.streak = (lastStr === yesterday) ? u.stats.streak + 1 : 1;
+      u.stats.drinksToday = 1;
+      u.stats.lastDrinkDate = todayStr;
     }
-
-    document.getElementById("unparsedValue").textContent = String(data.unparsedCount);
-    document.getElementById("unparsedDelta").textContent =
-      data.unparsedCount > 0 ? "Needs a quick look" : "All caught up";
-  }
-
-  function renderLinkedAccounts(data) {
-    document.getElementById("linkedAccountsList").innerHTML = data.accounts
-      .map((a) => {
-        const slug = bankSlug(a.bankName);
-        const initial = (a.bankName || "?")[0].toUpperCase();
-        const idPart = a.maskedIdentifier ? ` •• ${a.maskedIdentifier}` : "";
-        return `<div class="account-row">
-          <div class="account-left"><span class="bank-badge ${slug}">${initial}</span> ${a.bankName}${idPart}</div>
-          <b>${inr(a.balance)}</b>
-        </div>`;
-      })
-      .join("");
-  }
-
-  function renderRecentTransactions(data) {
-    document.getElementById("recentTxnBody").innerHTML = data.recentTransactions
-      .map((t) => {
-        const dateStr = new Date(t.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-        const account = t.bankName ?? "—";
-        if (t.status === "unparsed") {
-          return `<tr>
-            <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
-            <td><span class="unparsed-tag">review</span></td>
-            <td style="text-align:right;">—</td>
-          </tr>`;
-        }
-        if (t.status === "netted") {
-          return `<tr style="opacity:.7;">
-            <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
-            <td><span class="netted-tag">refund · netted</span></td>
-            <td style="text-align:right;">${inr(t.amount)}</td>
-          </tr>`;
-        }
-        const sign = t.type === "debit" ? "−" : "+";
-        const cls = t.type === "debit" ? "debit" : "credit";
-        return `<tr>
-          <td>${dateStr}</td><td>${t.vendor}</td><td>${account}</td>
-          <td><span class="src-tag">Telegram · ${t.source}</span></td>
-          <td style="text-align:right;" class="amt ${cls}">${sign}${inr(t.amount)}</td>
-        </tr>`;
-      })
-      .join("");
-  }
-
-  function renderCategoryChart(data) {
-    const ctx = document.getElementById("categoryChart");
-    const labels = data.categoryBreakdown.map((c) => c.category);
-    const values = data.categoryBreakdown.map((c) => c.amount);
-    if (categoryChart) categoryChart.destroy();
-    categoryChart = new Chart(ctx, {
-      type: "doughnut",
-      data: {
-        labels: labels.length ? labels : ["No spending yet"],
-        datasets: [{
-          data: values.length ? values : [1],
-          backgroundColor: CATEGORY_COLORS,
-          borderWidth: 0,
-        }]
-      },
-      options: {
-        plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
-        cutout: "62%",
-      }
-    });
-  }
-
-  function renderTrendCharts(data) {
-    const labels = data.monthlyTrend.map((m) => monthLabel(m.month).split(" ")[0]);
-    const spent = data.monthlyTrend.map((m) => m.spent);
-    const income = data.monthlyTrend.map((m) => m.income);
-    const savings = data.monthlyTrend.map((m) => m.income - m.spent);
-
-    if (trendChart) trendChart.destroy();
-    trendChart = new Chart(document.getElementById("trendChart"), {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          { label: "Spent", data: spent, backgroundColor: "#baf23c" },
-          { label: "Income", data: income, backgroundColor: "#2c3a26" },
-        ]
-      },
-      options: {
-        plugins: { legend: { position: "bottom", labels: { color: "#eef4f0", boxWidth: 10, font: { size: 11 } } } },
-        scales: {
-          y: { ticks: { color: "#7f9086", callback: v => "₹" + (v/1000) + "k" }, grid: { color: "#223028" } },
-          x: { ticks: { color: "#7f9086" }, grid: { display: false } }
-        }
-      }
-    });
-
-    if (savingsChart) savingsChart.destroy();
-    savingsChart = new Chart(document.getElementById("savingsSpark"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: [{
-          data: savings,
-          borderColor: "#baf23c", backgroundColor: "rgba(186,242,60,0.15)",
-          fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
-        }]
-      },
-      options: {
-        plugins: { legend: { display: false } },
-        scales: { x: { display: false }, y: { display: false } }
-      }
-    });
-  }
-
-  function populateMonthSelect(data) {
-    const select = document.getElementById("monthSelect");
-    select.innerHTML = data.availableMonths
-      .slice()
-      .reverse()
-      .map((m) => `<option value="${m}" ${m === data.month ? "selected" : ""}>${monthLabel(m)}</option>`)
-      .join("");
-  }
-
-  function escapeHtml(s) {
-    return (s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-
-  function reviewRowHtml(entry) {
-    const dateStr = new Date(entry.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-    return `<div class="review-row" data-id="${entry.id}" style="border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px;">
-      <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">${dateStr}</div>
-      <div style="font-size:12px; margin-bottom:8px; word-break:break-word;">${escapeHtml(entry.redactedRawText) || "<span style='color:var(--muted)'>(no text saved)</span>"}</div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-        <input type="number" step="0.01" min="0" placeholder="Amount" class="review-amount"
-          style="width:100px; background:var(--card-2); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px; font-size:12px;">
-        <select class="review-type"
-          style="background:var(--card-2); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px; font-size:12px;">
-          <option value="debit">Debit</option>
-          <option value="credit">Credit</option>
-        </select>
-        <input type="text" placeholder="Vendor (optional)" class="review-vendor"
-          style="flex:1; min-width:100px; background:var(--card-2); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px; font-size:12px;">
-        <button class="review-approve" style="background:var(--accent); color:#10240a; border:none; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer;">Approve</button>
-        <button class="review-reject" style="background:transparent; color:var(--danger); border:1px solid var(--danger); border-radius:8px; padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer;">Reject</button>
-      </div>
-    </div>`;
-  }
-
-  async function loadUnparsed() {
-    const res = await fetch("/api/dashboard/unparsed");
-    if (!res.ok) return;
-    const data = await res.json();
-    const panel = document.getElementById("reviewPanel");
-    const list = document.getElementById("reviewList");
-    if (!data.entries.length) {
-      panel.style.display = "none";
-      list.innerHTML = "";
-      return;
-    }
-    panel.style.display = "";
-    list.innerHTML = data.entries.map(reviewRowHtml).join("");
-  }
-
-  document.getElementById("reviewList").addEventListener("click", async (e) => {
-    const row = e.target.closest(".review-row");
-    if (!row) return;
-    const id = row.dataset.id;
-
-    if (e.target.classList.contains("review-reject")) {
-      e.target.disabled = true;
-      const res = await fetch(`/api/dashboard/unparsed/${id}/reject`, { method: "POST" });
-      if (res.ok) {
-        row.remove();
-        if (!document.getElementById("reviewList").children.length) document.getElementById("reviewPanel").style.display = "none";
-        loadDashboard(document.getElementById("monthSelect").value);
-      } else {
-        e.target.disabled = false;
-        alert("Couldn't reject that one — try again.");
-      }
-      return;
-    }
-
-    if (e.target.classList.contains("review-approve")) {
-      const amount = parseFloat(row.querySelector(".review-amount").value);
-      const type = row.querySelector(".review-type").value;
-      const vendor = row.querySelector(".review-vendor").value.trim();
-      if (!Number.isFinite(amount) || amount <= 0) {
-        alert("Enter a valid amount first.");
-        return;
-      }
-      e.target.disabled = true;
-      const res = await fetch(`/api/dashboard/unparsed/${id}/approve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount, type, vendor: vendor || null }),
-      });
-      if (res.ok) {
-        row.remove();
-        if (!document.getElementById("reviewList").children.length) document.getElementById("reviewPanel").style.display = "none";
-        loadDashboard(document.getElementById("monthSelect").value);
-      } else {
-        e.target.disabled = false;
-        const body = await res.json().catch(() => ({}));
-        alert(body.error || "Couldn't approve that one — try again.");
-      }
-    }
+    u.stats.log.push(now);
+    if(u.stats.log.length>50) u.stats.log = u.stats.log.slice(-50);
+    u.stats.nextReminderAt = now + u.reminder.intervalMinutes*60000;
   });
+  refreshStatsUI(getCurrentUser());
+  closeReminderPopup();
+}
 
-  // --- CAS PDF upload -------------------------------------------------
-  // Everything here runs in the browser: the file and its password never
-  // leave the tab. Only the already-extracted holdings get POSTed, and only
-  // after the person reviews and confirms them below.
-  //
-  // pdf.js v5+ ships ES modules only (no window.pdfjsLib global), so it's
-  // loaded with a dynamic import() — that works fine from a regular
-  // (non-module) <script> block. Loaded lazily and cached in this promise so
-  // clicking Parse multiple times doesn't re-fetch it.
-  const PDFJS_VERSION = "6.1.200"; // if this 404s, check https://cdnjs.com/libraries/pdf.js and update it here
-  let pdfjsLibPromise = null;
-  function loadPdfJs() {
-    if (!pdfjsLibPromise) {
-      pdfjsLibPromise = import(`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`).then((mod) => {
-        mod.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.mjs`;
-        return mod;
-      });
-    }
-    return pdfjsLibPromise;
-  }
-
-  let casHoldings = [];
-
-  async function extractPdfText(arrayBuffer, password) {
-    const pdfjsLib = await loadPdfJs();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, password }).promise;
-    let fullText = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      fullText += content.items.map((item) => item.str).join(" ") + "\n";
-    }
-    return fullText;
-  }
-
-  // Best-effort CAS text parser — NOT yet verified against a real CAS PDF (no
-  // sample was available while building this). It looks for two generic
-  // shapes: (1) a mutual fund entry — some fund/plan name followed, within a
-  // few hundred characters, by both a "cost/invested value" and a
-  // "market/current value" figure; (2) a demat stock holding — a line
-  // reading roughly "Name  ISIN  Quantity  Value". Expect to refine these
-  // patterns once tested against a real (redacted) statement, the same way
-  // the bank-message templates in src/parsing/templates/ were refined.
-  function parseCasText(text) {
-    const holdings = [];
-    const seen = new Set();
-
-    const mfPattern =
-      /([A-Z][A-Za-z0-9()&.,'\-/ ]{4,90}?(?:Fund|Plan)[A-Za-z0-9()&.,'\-/ ]{0,40})[\s\S]{0,250}?(?:Cost\s*Value|Total\s*Cost|Invested\s*Value)[:\s]*(?:Rs\.?)?\s*([\d,]+\.\d{2})[\s\S]{0,150}?(?:Market\s*Value|Current\s*Value)[:\s]*(?:Rs\.?)?\s*([\d,]+\.\d{2})/gi;
-    let m;
-    while ((m = mfPattern.exec(text)) !== null) {
-      const name = m[1].replace(/\s+/g, " ").trim();
-      const investedAmount = parseFloat(m[2].replace(/,/g, ""));
-      const currentValue = parseFloat(m[3].replace(/,/g, ""));
-      const key = "sip:" + name.toLowerCase();
-      if (!seen.has(key) && name.length >= 5) {
-        seen.add(key);
-        holdings.push({ type: "sip", name, investedAmount, currentValue });
-      }
-    }
-
-    const stockPattern = /^(.{3,60}?)\s+(IN[A-Z0-9]{10})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*$/gim;
-    while ((m = stockPattern.exec(text)) !== null) {
-      const name = m[1].replace(/\s+/g, " ").trim();
-      const currentValue = parseFloat(m[4].replace(/,/g, ""));
-      const key = "stock:" + name.toLowerCase();
-      if (!seen.has(key) && name.length >= 2) {
-        seen.add(key);
-        holdings.push({ type: "stock", name, investedAmount: null, currentValue });
-      }
-    }
-
-    return holdings;
-  }
-
-  function openCasModal() {
-    document.getElementById("casModalOverlay").classList.add("open");
-    document.getElementById("casStepUpload").style.display = "";
-    document.getElementById("casStepPreview").style.display = "none";
-    document.getElementById("casFileInput").value = "";
-    document.getElementById("casPasswordInput").value = "";
-    document.getElementById("casError").style.display = "none";
-    const parseBtn = document.getElementById("casParseBtn");
-    parseBtn.disabled = false;
-    parseBtn.textContent = "Parse";
-  }
-
-  function closeCasModal() {
-    document.getElementById("casModalOverlay").classList.remove("open");
-  }
-
-  document.getElementById("uploadCasBtn").addEventListener("click", openCasModal);
-  document.getElementById("casCancelBtn").addEventListener("click", closeCasModal);
-  document.getElementById("casBackBtn").addEventListener("click", () => {
-    document.getElementById("casStepPreview").style.display = "none";
-    document.getElementById("casStepUpload").style.display = "";
+function openSnoozePicker(){
+  const u = getCurrentUser();
+  document.getElementById('popup-actions').classList.remove('show');
+  document.getElementById('speech-bubble').classList.remove('show');
+  const picker = document.getElementById('snooze-picker');
+  picker.classList.add('show');
+  picker.querySelectorAll('.chip').forEach(c=>{
+    c.classList.toggle('selected', parseInt(c.dataset.mins,10)===u.reminder.snoozeMinutes);
+    c.onclick = ()=> confirmSnooze(parseInt(c.dataset.mins,10));
   });
+}
+function closeSnoozePicker(){ document.getElementById('snooze-picker').classList.remove('show'); }
 
-  document.getElementById("casParseBtn").addEventListener("click", async () => {
-    const fileInput = document.getElementById("casFileInput");
-    const password = document.getElementById("casPasswordInput").value.trim();
-    const errorEl = document.getElementById("casError");
-    errorEl.style.display = "none";
+function confirmSnooze(mins){
+  updateCurrentUser(u=>{ u.stats.nextReminderAt = Date.now() + mins*60000; });
+  closeReminderPopup();
+}
 
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) {
-      errorEl.textContent = "Choose a CAS PDF file first.";
-      errorEl.style.display = "block";
-      return;
-    }
-
-    const parseBtn = document.getElementById("casParseBtn");
-    parseBtn.disabled = true;
-    parseBtn.textContent = "Reading…";
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const text = await extractPdfText(arrayBuffer, password);
-      const holdings = parseCasText(text);
-      if (holdings.length === 0) {
-        errorEl.textContent = "Couldn't find any holdings in this PDF — the format may not be supported yet.";
-        errorEl.style.display = "block";
-        parseBtn.disabled = false;
-        parseBtn.textContent = "Parse";
-        return;
-      }
-      casHoldings = holdings;
-      document.getElementById("casStepUpload").style.display = "none";
-      document.getElementById("casStepPreview").style.display = "";
-      renderCasHoldingsList();
-    } catch (err) {
-      const msg = String((err && err.message) || err);
-      errorEl.textContent = /password/i.test(msg)
-        ? "Wrong password — try again (usually your PAN, all caps, no spaces)."
-        : "Couldn't read this PDF: " + msg;
-      errorEl.style.display = "block";
-      parseBtn.disabled = false;
-      parseBtn.textContent = "Parse";
-    }
+/* =====================================================================
+   3D CSS avatar rig factory
+   ===================================================================== */
+function makeNode(transform){
+  const el = document.createElement('div');
+  el.className = 'node3d';
+  if(transform) el.style.transform = transform;
+  return el;
+}
+function makeBox(w,h,d,colors,extraTransform){
+  const box = makeNode(extraTransform);
+  const specs = [
+    ['front', w,h, `translateZ(${d/2}px)`],
+    ['back',  w,h, `rotateY(180deg) translateZ(${d/2}px)`],
+    ['right', d,h, `rotateY(90deg) translateZ(${w/2}px)`],
+    ['left',  d,h, `rotateY(-90deg) translateZ(${w/2}px)`],
+    ['top',   w,d, `rotateX(90deg) translateZ(${h/2}px)`],
+    ['bottom',w,d, `rotateX(-90deg) translateZ(${h/2}px)`],
+  ];
+  specs.forEach(([name, fw, fh, tf])=>{
+    const f = document.createElement('div');
+    f.className = 'face3d face-'+name;
+    f.style.width = fw+'px';
+    f.style.height = fh+'px';
+    f.style.marginLeft = (-fw/2)+'px';
+    f.style.marginTop = (-fh/2)+'px';
+    f.style.transform = tf;
+    f.style.background = colors[name] || colors.front || '#cccccc';
+    box.appendChild(f);
   });
+  return box;
+}
 
-  function renderCasHoldingsList() {
-    const list = document.getElementById("casHoldingsList");
-    document.getElementById("casHoldingCount").textContent = String(casHoldings.length);
-    const total = casHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-    document.getElementById("casHoldingTotal").textContent = inr(total);
+function shade(hex, amt){
+  let c = hex.replace('#','');
+  if(c.length===3) c = c.split('').map(x=>x+x).join('');
+  const num = parseInt(c,16);
+  let r = (num>>16)+amt, g=((num>>8)&0xff)+amt, b=(num&0xff)+amt;
+  r=Math.max(0,Math.min(255,r)); g=Math.max(0,Math.min(255,g)); b=Math.max(0,Math.min(255,b));
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
 
-    list.innerHTML = casHoldings
-      .map(
-        (h, i) => `<div class="holding-row">
-        <span>${escapeHtml(h.name)} <span style="color:var(--muted);">(${h.type})</span></span>
-        <span style="display:flex; align-items:center; gap:8px;">
-          <b>${inr(h.currentValue || 0)}</b>
-          <button class="holding-remove" data-index="${i}" title="Remove">✕</button>
-        </span>
-      </div>`
-      )
-      .join("");
+function buildRig(config){
+  const c = config.color || '#3fa9f5';
+  const bodyColors = { front:c, back:shade(c,-30), right:shade(c,-20), left:shade(c,-45), top:shade(c,25), bottom:shade(c,-55) };
+  const skin = '#ffe0bd';
+  const skinColors = { front:skin, back:shade(skin,-25), right:shade(skin,-15), left:shade(skin,-35), top:shade(skin,20), bottom:shade(skin,-45) };
+  const limbColors = { front:shade(c,-10), back:shade(c,-40), right:shade(c,-25), left:shade(c,-50), top:shade(c,10), bottom:shade(c,-55) };
+  const legColors = { front:'#4a5b7a', back:'#33415c', right:'#3c4a68', left:'#2b3752', top:'#5a6d8e', bottom:'#242e42' };
+  const cupColors = { front:'#4dc7ff', back:'#2596d1', right:'#38aee0', left:'#1f7fb3', top:'#bfeaff', bottom:'#1a6e9c' };
+
+  const rigMount = makeNode('translate3d(0,0,0)');
+  rigMount.className += ' rig-mount';
+  const rigView = makeNode('');
+  rigView.className += ' rig-view';
+  const rigBody = makeNode('translate3d(0,60px,0)');
+  rigBody.className += ' rig-body';
+
+  // torso
+  const torso = makeBox(74,92,46, bodyColors, 'translate3d(0,-88px,0)');
+
+  // head group
+  const headGroup = makeNode('translate3d(0,-152px,0)');
+  const head = makeBox(58,56,56, skinColors);
+  headGroup.appendChild(head);
+  // eyes
+  const eyeL = makeBox(8,8,4, {front:'#20303f',back:'#20303f',left:'#20303f',right:'#20303f',top:'#20303f',bottom:'#20303f'}, 'translate3d(-14px,-2px,29px)');
+  const eyeR = makeBox(8,8,4, {front:'#20303f',back:'#20303f',left:'#20303f',right:'#20303f',top:'#20303f',bottom:'#20303f'}, 'translate3d(14px,-2px,29px)');
+  headGroup.appendChild(eyeL); headGroup.appendChild(eyeR);
+  // smile
+  const smile = makeBox(22,5,4, {front:'#a35d45',back:'#a35d45',left:'#a35d45',right:'#a35d45',top:'#a35d45',bottom:'#a35d45'}, 'translate3d(0,14px,29px)');
+  headGroup.appendChild(smile);
+
+  // accessory
+  if(config.accessory === 'cap'){
+    const cap = makeBox(64,18,60, {front:'#ff5566',back:'#c73e4c',left:'#b03340',right:'#e0475a',top:'#ff8b98',bottom:'#a12c38'}, 'translate3d(0,-34px,0)');
+    headGroup.appendChild(cap);
+    const brim = makeBox(70,6,26, {front:'#c73e4c',back:'#c73e4c',left:'#a12c38',right:'#a12c38',top:'#ff8b98',bottom:'#a12c38'}, 'translate3d(0,-26px,40px)');
+    headGroup.appendChild(brim);
+  } else if(config.accessory === 'glasses'){
+    const rim = { front:'#26313d',back:'#26313d',left:'#26313d',right:'#26313d',top:'#26313d',bottom:'#26313d' };
+    headGroup.appendChild(makeBox(16,4,3, rim, 'translate3d(-14px,-2px,30px)'));
+    headGroup.appendChild(makeBox(16,4,3, rim, 'translate3d(14px,-2px,30px)'));
+    headGroup.appendChild(makeBox(10,3,3, rim, 'translate3d(0,-2px,30px)'));
+  } else if(config.accessory === 'bow'){
+    const bowColors = {front:'#ff6bab',back:'#d1478a',left:'#b83a78',right:'#e85699',top:'#ffa0c8',bottom:'#a3306b'};
+    headGroup.appendChild(makeBox(16,14,10, bowColors, 'translate3d(-11px,-30px,10px)'));
+    headGroup.appendChild(makeBox(16,14,10, bowColors, 'translate3d(11px,-30px,10px)'));
+    headGroup.appendChild(makeBox(8,8,8, bowColors, 'translate3d(0,-30px,10px)'));
   }
 
-  document.getElementById("casHoldingsList").addEventListener("click", (e) => {
-    if (!e.target.classList.contains("holding-remove")) return;
-    casHoldings.splice(Number(e.target.dataset.index), 1);
-    renderCasHoldingsList();
-  });
+  // shoulders / arms
+  const leftShoulder = makeNode('translate3d(-50px,-126px,0)');
+  const leftSwing = makeNode('');
+  leftSwing.className += ' swing arm-left';
+  const leftArm = makeBox(20,74,20, limbColors, 'translate3d(0,37px,0)');
+  leftSwing.appendChild(leftArm);
+  leftShoulder.appendChild(leftSwing);
 
-  document.getElementById("casConfirmBtn").addEventListener("click", async () => {
-    const saveError = document.getElementById("casSaveError");
-    saveError.style.display = "none";
+  const rightShoulder = makeNode('translate3d(50px,-126px,0)');
+  rightShoulder.className += ' arm-right-shoulder';
+  const rightSwing = makeNode('');
+  rightSwing.className += ' swing arm-right';
+  const rightArm = makeBox(20,74,20, limbColors, 'translate3d(0,37px,0)');
+  rightSwing.appendChild(rightArm);
+  // cup held in right hand
+  const cupGroup = makeNode('translate3d(0,76px,14px)');
+  const cup = makeBox(24,30,24, cupColors);
+  cupGroup.appendChild(cup);
+  rightSwing.appendChild(cupGroup);
+  rightShoulder.appendChild(rightSwing);
 
-    if (casHoldings.length === 0) {
-      saveError.textContent = "Nothing left to save — remove fewer, or cancel and try a different file.";
-      saveError.style.display = "block";
-      return;
+  // hips / legs
+  const leftHip = makeNode('translate3d(-19px,-42px,0)');
+  const leftLegSwing = makeNode('');
+  leftLegSwing.className += ' swing leg-left';
+  const leftLeg = makeBox(24,80,24, legColors, 'translate3d(0,40px,0)');
+  leftLegSwing.appendChild(leftLeg);
+  leftHip.appendChild(leftLegSwing);
+
+  const rightHip = makeNode('translate3d(19px,-42px,0)');
+  const rightLegSwing = makeNode('');
+  rightLegSwing.className += ' swing leg-right';
+  const rightLeg = makeBox(24,80,24, legColors, 'translate3d(0,40px,0)');
+  rightLegSwing.appendChild(rightLeg);
+  rightHip.appendChild(rightLegSwing);
+
+  rigBody.appendChild(torso);
+  rigBody.appendChild(headGroup);
+  rigBody.appendChild(leftShoulder);
+  rigBody.appendChild(rightShoulder);
+  rigBody.appendChild(leftHip);
+  rigBody.appendChild(rightHip);
+
+  rigView.appendChild(rigBody);
+  rigMount.appendChild(rigView);
+  return { rigMount, rigView };
+}
+
+function renderRig(containerId, config, opts){
+  opts = opts || {};
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  const { rigMount, rigView } = buildRig(config);
+  if(opts.spin===false) rigView.classList.add('no-spin');
+  container.appendChild(rigMount);
+  if(opts.returnRefs) return { mount: rigMount, rigView: rigView };
+  return { mount: rigMount, rigView: rigView };
+}
+
+/* ---------------- boot ---------------- */
+(function boot(){
+  const u = getCurrentUser();
+  if(u){
+    if(!u.onboarded){
+      goToScreen('screen-avatar');
+    } else {
+      goToScreen('screen-dashboard');
     }
-
-    const confirmBtn = document.getElementById("casConfirmBtn");
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = "Saving…";
-
-    try {
-      const res = await fetch("/api/investments/import", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ holdings: casHoldings }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Save failed");
-      }
-      closeCasModal();
-      loadDashboard(document.getElementById("monthSelect").value);
-    } catch (err) {
-      saveError.textContent = String((err && err.message) || err);
-      saveError.style.display = "block";
-    } finally {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = "Looks right — save";
-    }
-  });
-
-  function shortDate(iso) {
-    return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  } else {
+    goToScreen('screen-auth');
   }
-
-  function renderInvestments(data) {
-    document.getElementById("netWorthValue").textContent = inr(data.netWorth);
-    const asOf = data.investmentsAsOf;
-    document.getElementById("netWorthDelta").textContent = asOf
-      ? `Investments as of ${shortDate(asOf)}`
-      : "Bank balance only — upload a CAS to add investments";
-
-    const totals = data.investmentTotals;
-    const present = data.investmentTypesPresent;
-    document.getElementById("invSipValue").textContent = present.sip ? inr(totals.sip) : "—";
-    document.getElementById("invStockValue").textContent = present.stock ? inr(totals.stock) : "—";
-    document.getElementById("invFdValue").textContent = present.fd ? inr(totals.fd) : "—";
-    document.getElementById("invRdValue").textContent = present.rd ? inr(totals.rd) : "—";
-
-    document.getElementById("investmentsAsOfLabel").textContent = asOf ? `· as of ${shortDate(asOf)}` : "";
-  }
-
-  async function loadDashboard(month) {
-    const url = month ? `/api/dashboard/data?month=${encodeURIComponent(month)}` : "/api/dashboard/data";
-    const res = await fetch(url);
-    if (!res.ok) {
-      document.querySelector(".main").innerHTML = "<p style='color:#7f9086;padding:20px;'>Couldn't load your data — try refreshing.</p>";
-      return;
-    }
-    const data = await res.json();
-    document.getElementById("categoryMonthLabel").textContent = monthLabel(data.month);
-    populateMonthSelect(data);
-    renderCards(data);
-    renderLinkedAccounts(data);
-    renderRecentTransactions(data);
-    renderCategoryChart(data);
-    renderTrendCharts(data);
-    renderInvestments(data);
-  }
-
-  document.getElementById("monthSelect").addEventListener("change", (e) => loadDashboard(e.target.value));
-  loadDashboard();
-  loadUnparsed();
+})();
 </script>
+<footer class="tiny">HydroBuddy — a demo project. All data lives only in this browser.</footer>
 </body>
 </html>
