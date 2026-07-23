@@ -7,11 +7,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <!-- CAS PDFs are parsed entirely client-side (never uploaded as a raw file — see the
      Decision Log: a spike measured 35-44ms CPU to decrypt+read one, over the Workers
-     free-tier's 10ms/request cap). This version is believed current as of writing but
-     wasn't network-verified from the build environment — if the browser console shows
-     a 404 for either script, check https://cdnjs.com/libraries/pdf.js for the current
-     version and swap it in both places below (script src + workerSrc). -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js"></script>
+     free-tier's 10ms/request cap). pdf.js v5+ dropped the old global-script UMD build
+     in favor of ES modules only, so it's loaded via dynamic import() in the script
+     below (see loadPdfJs()) rather than a <script src> tag — there's no window.pdfjsLib
+     global anymore. If the browser console shows a 404 on either .mjs file, check
+     https://cdnjs.com/libraries/pdf.js for the current version/paths and update the
+     two URLs inside loadPdfJs(). -->
 <style>
   :root {
     --bg: #0c0f0d;
@@ -608,13 +609,27 @@
   // Everything here runs in the browser: the file and its password never
   // leave the tab. Only the already-extracted holdings get POSTed, and only
   // after the person reviews and confirms them below.
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.js";
+  //
+  // pdf.js v5+ ships ES modules only (no window.pdfjsLib global), so it's
+  // loaded with a dynamic import() — that works fine from a regular
+  // (non-module) <script> block. Loaded lazily and cached in this promise so
+  // clicking Parse multiple times doesn't re-fetch it.
+  const PDFJS_VERSION = "6.1.200"; // if this 404s, check https://cdnjs.com/libraries/pdf.js and update it here
+  let pdfjsLibPromise = null;
+  function loadPdfJs() {
+    if (!pdfjsLibPromise) {
+      pdfjsLibPromise = import(`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`).then((mod) => {
+        mod.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.mjs`;
+        return mod;
+      });
+    }
+    return pdfjsLibPromise;
   }
 
   let casHoldings = [];
 
   async function extractPdfText(arrayBuffer, password) {
+    const pdfjsLib = await loadPdfJs();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, password }).promise;
     let fullText = "";
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -697,11 +712,6 @@
     const file = fileInput.files && fileInput.files[0];
     if (!file) {
       errorEl.textContent = "Choose a CAS PDF file first.";
-      errorEl.style.display = "";
-      return;
-    }
-    if (!window.pdfjsLib) {
-      errorEl.textContent = "PDF reader didn't load — check your connection and refresh.";
       errorEl.style.display = "";
       return;
     }
