@@ -4,7 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kosha — Dashboard Mockup (Dark)</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<!-- If this 404s again in future, check https://cdnjs.com/libraries/Chart.js for the
+     current version and update the path above — pinned versions on this CDN get
+     removed over time, and a 404 here silently breaks the whole dashboard: Chart.js
+     not loading throws "Chart is not defined" inside renderCategoryChart(), which
+     aborts loadDashboard() partway through and leaves net worth/investments stuck on
+     their placeholder "—" even though the underlying data saved just fine. -->
 <!-- CAS PDFs are parsed entirely client-side (never uploaded as a raw file — see the
      Decision Log: a spike measured 35-44ms CPU to decrypt+read one, over the Workers
      free-tier's 10ms/request cap). pdf.js v5+ dropped the old global-script UMD build
@@ -1019,13 +1025,27 @@
     }
     const data = await res.json();
     document.getElementById("categoryMonthLabel").textContent = monthLabel(data.month);
-    populateMonthSelect(data);
-    renderCards(data);
-    renderLinkedAccounts(data);
-    renderRecentTransactions(data);
-    renderCategoryChart(data);
-    renderTrendCharts(data);
-    renderInvestments(data);
+    // Each render step runs independently — e.g. a chart-library CDN 404
+    // throwing inside renderCategoryChart shouldn't be able to silently
+    // abort every render call after it (that's exactly what happened here:
+    // Chart.js failing to load took out net worth/investments along with
+    // it, even though the underlying save had succeeded). One bad section
+    // now just logs and leaves that section as-is instead of blanking out
+    // everything below it.
+    const safeRender = (fn) => {
+      try {
+        fn(data);
+      } catch (err) {
+        console.error("Dashboard render step failed:", fn.name || fn, err);
+      }
+    };
+    safeRender(populateMonthSelect);
+    safeRender(renderCards);
+    safeRender(renderLinkedAccounts);
+    safeRender(renderRecentTransactions);
+    safeRender(renderCategoryChart);
+    safeRender(renderTrendCharts);
+    safeRender(renderInvestments);
   }
 
   document.getElementById("monthSelect").addEventListener("change", (e) => loadDashboard(e.target.value));
