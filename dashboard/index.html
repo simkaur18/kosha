@@ -728,19 +728,27 @@
   // the registrar/statement type (see the Decision Log for what's confirmed
   // against real statements vs still best-effort):
   //
+  //  - A CDSL/NSDL demat CAS's "MUTUAL FUND UNITS HELD AS ON <date>" table —
+  //    one row per scheme with columns for ISIN, folio, closing balance,
+  //    NAV, cumulative amount invested, and valuation, all on one line.
+  //    Confirmed directly against a real (user-shared, since-discussed)
+  //    CDSL statement — this is the most reliable pattern below.
   //  - A "summary" style CAMS/KFintech statement: one row per scheme with
   //    Cost Value and Market Value columns directly next to the fund name.
-  //  - A "detailed" style CAMS/KFintech statement (the common case for a
-  //    full multi-page CAS): a per-folio transaction ledger with no single
-  //    "cost value" field — instead a "Closing Unit Balance", a
+  //    Still best-effort, not yet confirmed against a real sample.
+  //  - A "detailed" style CAMS/KFintech per-folio transaction ledger with no
+  //    single "cost value" field — instead a "Closing Unit Balance", a
   //    "NAV on <date> : INR <x>", and usually a "Valuation on <date> : INR
-  //    <x>" line. There's no reliable per-scheme invested/cost figure here
-  //    without reconstructing it from every purchase/redemption transaction,
-  //    so investedAmount is left null for these, same as for stocks below.
-  //  - NSDL/CDSL demat holdings: a row of "Name  ISIN  Quantity  Value".
+  //    <x>" line. Also still best-effort/unconfirmed. There's no reliable
+  //    per-scheme invested/cost figure here without reconstructing it from
+  //    every purchase/redemption transaction, so investedAmount is left
+  //    null for these, same as for stocks below.
+  //  - NSDL/CDSL demat equity holdings — a "HOLDING STATEMENT"-style table
+  //    of ISIN, security name, several balance columns (some "--"), market
+  //    price, and value. Confirmed against a real CDSL statement.
   //
-  // Both mutual-fund shapes are tried, and results are merged/de-duped by
-  // name so whichever shape a given statement actually uses gets picked up.
+  // All shapes are tried and results are merged/de-duped by name so
+  // whichever shape a given statement actually uses gets picked up.
   function parseCasText(text) {
     const holdings = [];
     const seen = new Set();
@@ -754,11 +762,43 @@
       }
     };
 
+    const addStock = (name, currentValue) => {
+      name = name.replace(/\s+/g, " ").trim();
+      const key = "stock:" + name.toLowerCase();
+      if (name.length >= 2 && !seen.has(key) && Number.isFinite(currentValue)) {
+        seen.add(key);
+        holdings.push({ type: "stock", name, investedAmount: null, currentValue });
+      }
+    };
+
+    // CDSL/NSDL "MUTUAL FUND UNITS HELD AS ON <date>" table: one row per
+    // scheme — "<code> - <name> <ISIN> <folio> <units> <NAV> <invested>
+    // <valuation> <P/L amount> <P/L %>", e.g.
+    // "GFG - HDFC Balanced Advantage Fund - Regular Plan - Growth
+    // INF179K01830   40555123/82   9.754   519.403   5,000.00   5,066.26
+    // 66.26   1.33". The name capture excludes runs into a following ISIN
+    // so it doesn't swallow the next row when statements run rows together.
+    const mfHeldPattern =
+      /([A-Z0-9]{1,10})\s*-\s*([A-Za-z](?:(?!IN[A-Z0-9]{9}\d\b).){3,90}?)\s+(IN[A-Z0-9]{9}\d)\s+(\d+\/\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s+(-?[\d.]+)/g;
+    let m;
+    while ((m = mfHeldPattern.exec(text)) !== null) {
+      addSip(m[2], parseFloat(m[7].replace(/,/g, "")), parseFloat(m[8].replace(/,/g, "")));
+    }
+
+    // CDSL/NSDL demat equity "HOLDING STATEMENT"-style table: "<ISIN>
+    // <security name> <current bal|--> <frozen|--> <pledge|--> <pledge
+    // setup|--> <free bal|--> <market price> <value>". Same swallow-guard
+    // on the name as above.
+    const dematHeldPattern =
+      /(IN[A-Z0-9]{9}\d)\s+((?:(?!IN[A-Z0-9]{9}\d\b).){2,100}?)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+([\d,]+\.\d{1,4})\s+([\d,]+\.\d{2})\b/g;
+    while ((m = dematHeldPattern.exec(text)) !== null) {
+      addStock(m[2], parseFloat(m[4].replace(/,/g, "")));
+    }
+
     // Summary-style: fund name, then within a few hundred characters both a
     // cost/invested figure and a market/current figure.
     const mfSummaryPattern =
       /([A-Z][A-Za-z0-9()&.,'\-/ ]{4,90}?(?:Fund|Plan)[A-Za-z0-9()&.,'\-/ ]{0,40})[\s\S]{0,250}?(?:Cost\s*Value|Total\s*Cost|Invested\s*Value)[:\s]*(?:Rs\.?|INR)?\s*([\d,]+\.\d{2})[\s\S]{0,150}?(?:Market\s*Value|Current\s*Value)[:\s]*(?:Rs\.?|INR)?\s*([\d,]+\.\d{2})/gi;
-    let m;
     while ((m = mfSummaryPattern.exec(text)) !== null) {
       addSip(m[1], parseFloat(m[2].replace(/,/g, "")), parseFloat(m[3].replace(/,/g, "")));
     }
@@ -793,19 +833,15 @@
       addSip(schemeMatch[1], NaN, Math.round(currentValue * 100) / 100);
     }
 
-    // NSDL/CDSL demat stock holdings — "Name  ISIN  Quantity  Value". Real
-    // ISINs are 12 chars: 2-letter country code + 9 alphanumerics + 1 check
-    // digit (equity ISINs from NSDL/CDSL commonly start INE/IN9, mutual-fund
-    // ISINs start INF — this pattern accepts any of those).
+    // Fallback generic shape: a line reading roughly "Name  ISIN  Quantity
+    // Value", for statement variants that don't match the table shapes
+    // above. Real ISINs are 12 chars: 2-letter country code + 9
+    // alphanumerics + 1 check digit.
     const stockPattern = /^(.{3,60}?)\s+(IN[A-Z0-9]{10})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*$/gim;
     while ((m = stockPattern.exec(text)) !== null) {
       const name = m[1].replace(/\s+/g, " ").trim();
       const currentValue = parseFloat(m[4].replace(/,/g, ""));
-      const key = "stock:" + name.toLowerCase();
-      if (!seen.has(key) && name.length >= 2) {
-        seen.add(key);
-        holdings.push({ type: "stock", name, investedAmount: null, currentValue });
-      }
+      addStock(name, currentValue);
     }
 
     return holdings;
