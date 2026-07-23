@@ -690,37 +690,113 @@
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      fullText += content.items.map((item) => item.str).join(" ") + "\n";
+      // Group text items into lines by y-position, then sort each line
+      // left-to-right by x-position, instead of just concatenating items in
+      // whatever order pdf.js returns them. CAS statements are laid out in
+      // tables/columns, and without this, cells from different columns (or
+      // even different rows) get run together on one line, which breaks any
+      // regex trying to match "label near a value" — see parseCasText below.
+      const Y_TOLERANCE = 2;
+      const lines = [];
+      for (const item of content.items) {
+        if (!item.str) continue;
+        const y = item.transform[5];
+        const x = item.transform[4];
+        let line = lines.find((l) => Math.abs(l.y - y) <= Y_TOLERANCE);
+        if (!line) {
+          line = { y, parts: [] };
+          lines.push(line);
+        }
+        line.parts.push({ x, str: item.str });
+      }
+      lines.sort((a, b) => b.y - a.y); // PDF y grows upward; top of page first
+      for (const line of lines) {
+        line.parts.sort((a, b) => a.x - b.x);
+        const lineText = line.parts
+          .map((p) => p.str)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (lineText) fullText += lineText + "\n";
+      }
+      fullText += "\n";
     }
     return fullText;
   }
 
-  // Best-effort CAS text parser — NOT yet verified against a real CAS PDF (no
-  // sample was available while building this). It looks for two generic
-  // shapes: (1) a mutual fund entry — some fund/plan name followed, within a
-  // few hundred characters, by both a "cost/invested value" and a
-  // "market/current value" figure; (2) a demat stock holding — a line
-  // reading roughly "Name  ISIN  Quantity  Value". Expect to refine these
-  // patterns once tested against a real (redacted) statement, the same way
-  // the bank-message templates in src/parsing/templates/ were refined.
+  // CAS text parser. Real CAS PDFs come in more than one shape depending on
+  // the registrar/statement type (see the Decision Log for what's confirmed
+  // against real statements vs still best-effort):
+  //
+  //  - A "summary" style CAMS/KFintech statement: one row per scheme with
+  //    Cost Value and Market Value columns directly next to the fund name.
+  //  - A "detailed" style CAMS/KFintech statement (the common case for a
+  //    full multi-page CAS): a per-folio transaction ledger with no single
+  //    "cost value" field — instead a "Closing Unit Balance", a
+  //    "NAV on <date> : INR <x>", and usually a "Valuation on <date> : INR
+  //    <x>" line. There's no reliable per-scheme invested/cost figure here
+  //    without reconstructing it from every purchase/redemption transaction,
+  //    so investedAmount is left null for these, same as for stocks below.
+  //  - NSDL/CDSL demat holdings: a row of "Name  ISIN  Quantity  Value".
+  //
+  // Both mutual-fund shapes are tried, and results are merged/de-duped by
+  // name so whichever shape a given statement actually uses gets picked up.
   function parseCasText(text) {
     const holdings = [];
     const seen = new Set();
 
-    const mfPattern =
-      /([A-Z][A-Za-z0-9()&.,'\-/ ]{4,90}?(?:Fund|Plan)[A-Za-z0-9()&.,'\-/ ]{0,40})[\s\S]{0,250}?(?:Cost\s*Value|Total\s*Cost|Invested\s*Value)[:\s]*(?:Rs\.?)?\s*([\d,]+\.\d{2})[\s\S]{0,150}?(?:Market\s*Value|Current\s*Value)[:\s]*(?:Rs\.?)?\s*([\d,]+\.\d{2})/gi;
-    let m;
-    while ((m = mfPattern.exec(text)) !== null) {
-      const name = m[1].replace(/\s+/g, " ").trim();
-      const investedAmount = parseFloat(m[2].replace(/,/g, ""));
-      const currentValue = parseFloat(m[3].replace(/,/g, ""));
+    const addSip = (name, investedAmount, currentValue) => {
+      name = name.replace(/\s+/g, " ").trim();
       const key = "sip:" + name.toLowerCase();
-      if (!seen.has(key) && name.length >= 5) {
+      if (name.length >= 5 && !seen.has(key) && Number.isFinite(currentValue)) {
         seen.add(key);
-        holdings.push({ type: "sip", name, investedAmount, currentValue });
+        holdings.push({ type: "sip", name, investedAmount: Number.isFinite(investedAmount) ? investedAmount : null, currentValue });
       }
+    };
+
+    // Summary-style: fund name, then within a few hundred characters both a
+    // cost/invested figure and a market/current figure.
+    const mfSummaryPattern =
+      /([A-Z][A-Za-z0-9()&.,'\-/ ]{4,90}?(?:Fund|Plan)[A-Za-z0-9()&.,'\-/ ]{0,40})[\s\S]{0,250}?(?:Cost\s*Value|Total\s*Cost|Invested\s*Value)[:\s]*(?:Rs\.?|INR)?\s*([\d,]+\.\d{2})[\s\S]{0,150}?(?:Market\s*Value|Current\s*Value)[:\s]*(?:Rs\.?|INR)?\s*([\d,]+\.\d{2})/gi;
+    let m;
+    while ((m = mfSummaryPattern.exec(text)) !== null) {
+      addSip(m[1], parseFloat(m[2].replace(/,/g, "")), parseFloat(m[3].replace(/,/g, "")));
     }
 
+    // Detailed-style: one block per "Folio No", scheme name usually appears
+    // as "<RTA scheme code>-<scheme name>", current value from the
+    // registrar's own "Valuation on <date>" figure, falling back to
+    // Closing Unit Balance × NAV if no valuation line is present.
+    const folioBlockPattern = /Folio\s*No\s*:?\s*[\d/]+[\s\S]{0,600}?(?=Folio\s*No\s*:|$)/gi;
+    let fb;
+    while ((fb = folioBlockPattern.exec(text)) !== null) {
+      const block = fb[0];
+      const schemeMatch = block.match(
+        /[A-Z0-9][\w.&']{1,20}\s*-\s*([A-Za-z][A-Za-z0-9()&.,'\-/ ]{4,90}?(?:Fund|Plan)[A-Za-z0-9()&.,'\-/ ]{0,40})/
+      );
+      if (!schemeMatch) continue;
+
+      let currentValue = NaN;
+      const valuationMatch = block.match(
+        /(?:Valuation|Market\s*Value)\s+on\s+\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{4}\s*:?\s*(?:INR|Rs\.?)?\s*([\d,]+\.\d{2})/i
+      );
+      if (valuationMatch) {
+        currentValue = parseFloat(valuationMatch[1].replace(/,/g, ""));
+      } else {
+        const balanceMatch = block.match(/Closing\s*Unit\s*Balance\s*:?\s*([\d,]+\.\d{3,4})/i);
+        const navMatch = block.match(/NAV\s+on\s+\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{4}\s*:\s*(?:INR|Rs\.?)?\s*([\d,]+\.\d{2,4})/i);
+        if (balanceMatch && navMatch) {
+          currentValue = parseFloat(balanceMatch[1].replace(/,/g, "")) * parseFloat(navMatch[1].replace(/,/g, ""));
+        }
+      }
+      if (!Number.isFinite(currentValue)) continue;
+      addSip(schemeMatch[1], NaN, Math.round(currentValue * 100) / 100);
+    }
+
+    // NSDL/CDSL demat stock holdings — "Name  ISIN  Quantity  Value". Real
+    // ISINs are 12 chars: 2-letter country code + 9 alphanumerics + 1 check
+    // digit (equity ISINs from NSDL/CDSL commonly start INE/IN9, mutual-fund
+    // ISINs start INF — this pattern accepts any of those).
     const stockPattern = /^(.{3,60}?)\s+(IN[A-Z0-9]{10})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*$/gim;
     while ((m = stockPattern.exec(text)) !== null) {
       const name = m[1].replace(/\s+/g, " ").trim();
