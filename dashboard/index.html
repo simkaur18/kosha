@@ -346,15 +346,21 @@
         <input type="password" id="casPasswordInput" placeholder="e.g. ABCDE1234F" autocomplete="off">
       </div>
       <div class="modal-error" id="casError"></div>
-      <div id="casDiagLine" style="display:none; font-size:11px; color:var(--muted); margin-top:6px;"></div>
-      <div class="modal-field" id="casDebugTextWrap" style="display:none;">
-        <label>Auto-redacted sample (short snippets around structural keywords only; all numbers blanked out — nothing here is sent anywhere automatically, click to select all and copy if you want to share it)</label>
-        <textarea id="casDebugTextArea" readonly rows="8" style="width:100%; font-family:monospace; font-size:11px;" onclick="this.select()"></textarea>
-      </div>
       <div class="modal-actions">
         <button class="modal-btn-secondary" id="casCancelBtn">Cancel</button>
         <button class="modal-btn-primary" id="casParseBtn">Parse</button>
       </div>
+    </div>
+
+    <!-- Outside both steps (upload vs preview) so it survives whichever one
+         is currently hidden — a diagnostic that only showed up when parsing
+         failed outright wasn't useful for "parsing succeeded, but found
+         suspiciously few holdings", which is a real case that needs to be
+         visible too. -->
+    <div id="casDiagLine" style="display:none; font-size:11px; color:var(--muted); margin-top:6px;"></div>
+    <div class="modal-field" id="casDebugTextWrap" style="display:none;">
+      <label>Auto-redacted sample (short snippets around structural keywords/unmatched ISINs only; all numbers blanked out — nothing here is sent anywhere automatically, click to select all and copy if you want to share it)</label>
+      <textarea id="casDebugTextArea" readonly rows="8" style="width:100%; font-family:monospace; font-size:11px;" onclick="this.select()"></textarea>
     </div>
 
     <div id="casStepPreview" style="display:none;">
@@ -690,6 +696,34 @@
       .join("\n\n--- snippet ---\n\n");
   }
 
+  // Like buildDebugSample, but targeted: for ISINs that were seen in the
+  // text but that neither the mutual-fund nor demat table regex matched,
+  // shows the actual row they appear in (still fully digit-redacted) so the
+  // regex can be fixed against the real row shape instead of guessing.
+  // Capped to a handful of ISINs/occurrences so this can't balloon into
+  // dumping most of a large document.
+  function buildUnmatchedIsinSample(text, unmatchedIsins, maxIsins = 8, maxPerIsin = 2) {
+    const WINDOW = 160;
+    const chunks = [];
+    for (const isin of Array.from(unmatchedIsins).slice(0, maxIsins)) {
+      const re = new RegExp(isin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+      let found = 0;
+      let m;
+      while (found < maxPerIsin && (m = re.exec(text)) !== null) {
+        const s = Math.max(0, m.index - WINDOW);
+        const e = Math.min(text.length, m.index + isin.length + WINDOW);
+        const redacted = text
+          .slice(s, e)
+          .replace(new RegExp(isin, "g"), "<ISIN>")
+          .replace(/\d+/g, (d) => "#".repeat(Math.min(d.length, 6)));
+        chunks.push(redacted);
+        found++;
+      }
+    }
+    if (chunks.length === 0) return "";
+    return chunks.join("\n\n--- unmatched ISIN row ---\n\n");
+  }
+
   // Returns { text, totalPages, pagesOk, pagesFailed } instead of a bare
   // string. Each page is extracted independently — a real multi-page CAS
   // (10+ pages isn't unusual) means a failure on any single page shouldn't
@@ -775,6 +809,7 @@
   function parseCasText(text) {
     const holdings = [];
     const seen = new Set();
+    const matchedIsins = new Set();
 
     const addSip = (name, investedAmount, currentValue) => {
       name = name.replace(/\s+/g, " ").trim();
@@ -806,6 +841,7 @@
     let m;
     while ((m = mfHeldPattern.exec(text)) !== null) {
       addSip(m[2], parseFloat(m[7].replace(/,/g, "")), parseFloat(m[8].replace(/,/g, "")));
+      matchedIsins.add(m[3]);
     }
 
     // CDSL/NSDL demat equity "HOLDING STATEMENT"-style table: "<ISIN>
@@ -816,6 +852,7 @@
       /(IN[A-Z0-9]{9}\d)\s+((?:(?!IN[A-Z0-9]{9}\d\b).){2,100}?)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+(?:--|[\d,.]+)\s+([\d,]+\.\d{1,4})\s+([\d,]+\.\d{2})\b/g;
     while ((m = dematHeldPattern.exec(text)) !== null) {
       addStock(m[2], parseFloat(m[4].replace(/,/g, "")));
+      matchedIsins.add(m[1]);
     }
 
     // Summary-style: fund name, then within a few hundred characters both a
@@ -865,9 +902,10 @@
       const name = m[1].replace(/\s+/g, " ").trim();
       const currentValue = parseFloat(m[4].replace(/,/g, ""));
       addStock(name, currentValue);
+      matchedIsins.add(m[2]);
     }
 
-    return holdings;
+    return { holdings, matchedIsins };
   }
 
   function openCasModal() {
@@ -924,7 +962,7 @@
         "Timed out reading this PDF — the reader may have failed to load, or the file's too large. Try refreshing the page and trying again."
       );
       const { text, totalPages, pagesOk, pagesFailed } = extracted;
-      const holdings = parseCasText(text);
+      const { holdings, matchedIsins } = parseCasText(text);
 
       // Count-only diagnostic (page counts + a rough unique-ISIN count) —
       // no names/amounts — so a "found way fewer holdings than expected"
@@ -932,18 +970,35 @@
       // vs "the page text is there but the regex isn't matching most of
       // it" without needing to share any real statement content.
       const uniqueIsins = new Set((text.match(/\bIN[A-Z0-9]{10}\b/g) || []));
+      const unmatchedIsins = new Set([...uniqueIsins].filter((isin) => !matchedIsins.has(isin)));
       const diagText =
         `Read ${pagesOk}/${totalPages} page(s)` +
         (pagesFailed.length ? ` (pages failed: ${pagesFailed.join(", ")})` : "") +
-        ` · ${uniqueIsins.size} unique ISIN(s) seen in the text · ${holdings.length} holding(s) parsed.`;
+        ` · ${uniqueIsins.size} unique ISIN(s) seen in the text · ${holdings.length} holding(s) parsed` +
+        (unmatchedIsins.size ? ` · ${unmatchedIsins.size} ISIN(s) seen but not matched by any pattern.` : ".");
       console.log("CAS parse diagnostic:", diagText);
       document.getElementById("casDiagLine").textContent = diagText;
       document.getElementById("casDiagLine").style.display = "block";
 
+      // Show redacted rows for whatever ISINs weren't picked up — this now
+      // fires whenever there's a gap, not just on a total zero-holdings
+      // failure, since "parsed some holdings but fewer than expected" is
+      // the more common real case (see the Decision Log entry on the CAS
+      // parser's demat-table gap).
+      if (unmatchedIsins.size > 0) {
+        window.__casDebugText = text;
+        document.getElementById("casDebugTextArea").value = buildUnmatchedIsinSample(text, unmatchedIsins);
+        document.getElementById("casDebugTextWrap").style.display = "block";
+      }
+
       if (holdings.length === 0) {
         // Debug aid: show a short, auto-redacted sample (see
         // buildDebugSample) in a plain textarea so it can be selected and
-        // copied by hand when the parser doesn't recognize the format.
+        // copied by hand when the parser doesn't recognize the format at
+        // all (unmatchedIsins would be empty here too, since there'd be no
+        // ISINs found in the text either — this is the "nothing recognized
+        // whatsoever" case, distinct from the "found some ISINs but the
+        // row shape didn't match" case handled above).
         // Never sent anywhere automatically — this only ever touches the
         // browser's own memory/DOM. The full raw text stays in
         // window.__casDebugText only, for local console inspection if ever
