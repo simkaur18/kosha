@@ -699,7 +699,14 @@
   // Like buildDebugSample, but targeted: for ISINs that were seen in the
   // text but that neither the mutual-fund nor demat table regex matched,
   // shows the actual row they appear in (still fully digit-redacted) so the
-  // regex can be fixed against the real row shape instead of guessing.
+  // regex can be fixed against the real row shape instead of guessing. A
+  // given ISIN often appears several times in a CAS (account details,
+  // transaction history, the actual holdings/value table) — most of those
+  // occurrences were never supposed to match anything, so showing whichever
+  // ones happen to come first in the document mostly just shows irrelevant
+  // rows. Every occurrence is scored by how many decimal-money-shaped
+  // numbers (the hallmark of a value/valuation table row) appear near it,
+  // and only the highest-scoring occurrence(s) per ISIN are shown.
   // Capped to a handful of ISINs/occurrences so this can't balloon into
   // dumping most of a large document.
   function buildUnmatchedIsinSample(text, unmatchedIsins, maxIsins = 8, maxPerIsin = 2) {
@@ -707,17 +714,22 @@
     const chunks = [];
     for (const isin of Array.from(unmatchedIsins).slice(0, maxIsins)) {
       const re = new RegExp(isin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      let found = 0;
+      const occurrences = [];
       let m;
-      while (found < maxPerIsin && (m = re.exec(text)) !== null) {
+      while ((m = re.exec(text)) !== null) {
         const s = Math.max(0, m.index - WINDOW);
         const e = Math.min(text.length, m.index + isin.length + WINDOW);
+        const window = text.slice(s, e);
+        const moneyLikeCount = (window.match(/\d[\d,]*\.\d{2}\b/g) || []).length;
+        occurrences.push({ s, e, moneyLikeCount });
+      }
+      occurrences.sort((a, b) => b.moneyLikeCount - a.moneyLikeCount);
+      for (const occ of occurrences.slice(0, maxPerIsin)) {
         const redacted = text
-          .slice(s, e)
+          .slice(occ.s, occ.e)
           .replace(new RegExp(isin, "g"), "<ISIN>")
           .replace(/\d+/g, (d) => "#".repeat(Math.min(d.length, 6)));
-        chunks.push(redacted);
-        found++;
+        chunks.push(`[${occ.moneyLikeCount} money-like numbers nearby]\n${redacted}`);
       }
     }
     if (chunks.length === 0) return "";
